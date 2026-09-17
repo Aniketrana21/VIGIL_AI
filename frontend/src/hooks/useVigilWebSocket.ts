@@ -83,6 +83,29 @@ export function useVigilWebSocket() {
               const livenessScore = Math.round((d.liveness?.liveness_score || 0.75) * 100);
               const risk = d.risk || {};
 
+              // Synthesize both acoustic risk and conversational linguistic threat
+              const convRisk = Math.round((prev.conversation?.risk_signal || 0) * 100);
+              const acousticRisk = risk.risk_score !== undefined ? risk.risk_score : prev.risk_score;
+              const compositeRisk = Math.max(acousticRisk, convRisk);
+
+              let effectiveLevel = risk.risk_level || prev.risk_level;
+              let effectiveAction = risk.action || risk.recommended_action || prev.action;
+              let effectiveCallStatus = prev.call_status;
+
+              if (compositeRisk >= 80) {
+                effectiveLevel = 'CRITICAL';
+                effectiveAction = 'BLOCK';
+                effectiveCallStatus = 'BLOCKED';
+              } else if (compositeRisk >= 50) {
+                effectiveLevel = 'HIGH';
+                effectiveAction = 'WARN';
+                if (effectiveCallStatus !== 'BLOCKED') effectiveCallStatus = 'WARNED';
+              } else if (compositeRisk >= 30) {
+                effectiveLevel = 'MEDIUM';
+                effectiveAction = 'CHALLENGE';
+                if (effectiveCallStatus !== 'BLOCKED' && effectiveCallStatus !== 'WARNED') effectiveCallStatus = 'CHALLENGING';
+              }
+
               return {
                 ...prev,
                 latency_ms: roundtrip > 0 && roundtrip < 500 ? roundtrip : prev.latency_ms,
@@ -90,28 +113,45 @@ export function useVigilWebSocket() {
                 speaker_match: speakerScore,
                 liveness: livenessScore,
                 deepfake_probability: deepfakeProb,
-                risk_score: risk.risk_score !== undefined ? risk.risk_score : prev.risk_score,
-                risk_level: risk.risk_level || prev.risk_level,
-                action: risk.action || risk.recommended_action || prev.action,
+                risk_score: compositeRisk,
+                risk_level: effectiveLevel as any,
+                action: effectiveAction as any,
+                call_status: effectiveCallStatus as any,
                 confidence: risk.confidence !== undefined ? risk.confidence : prev.confidence,
                 policy_version: risk.policy_version || prev.policy_version,
                 vad_active: !!d.vad?.speech_detected,
+                explanation: risk.explanation || prev.explanation,
               };
             });
           } else if (msg.type === 'TRANSCRIPT_STORED') {
-            setTelemetry((prev) => ({
-              ...prev,
-              live_transcript: msg.text,
-              conversation: {
-                intent: msg.intent || prev.conversation?.intent || 'ANALYZED',
-                risk_signal: msg.risk_score !== undefined ? msg.risk_score / 100 : prev.conversation?.risk_signal || 0.1,
-                evidence: msg.evidence || `Transcribed: "${msg.text}"`,
-                transcript: msg.text,
-              },
-              risk_score: msg.risk_score !== undefined ? msg.risk_score : prev.risk_score,
-              risk_level: msg.risk_level || prev.risk_level,
-              action: msg.action || prev.action,
-            }));
+            setTelemetry((prev) => {
+              const convRisk = msg.risk_score !== undefined ? msg.risk_score : 10;
+              const compositeRisk = Math.max(prev.risk_score, convRisk);
+              const level = convRisk >= 80 ? 'CRITICAL' : (convRisk >= 50 ? 'HIGH' : (convRisk >= 30 ? 'MEDIUM' : 'LOW'));
+              const action = convRisk >= 80 ? 'BLOCK' : (convRisk >= 50 ? 'WARN' : (convRisk >= 30 ? 'CHALLENGE' : 'ALLOW'));
+              const callStatus = action === 'BLOCK' ? 'BLOCKED' : (action === 'WARN' ? 'WARNED' : (action === 'CHALLENGE' ? 'CHALLENGING' : prev.call_status));
+              const threatSignal = `Linguistic Scam Intent: ${msg.intent} (${convRisk}% Risk)`;
+
+              const existingSignals = prev.threat_signals.filter((s) => !s.startsWith('Linguistic'));
+              const updatedSignals = convRisk >= 30 ? [threatSignal, ...existingSignals] : existingSignals;
+
+              return {
+                ...prev,
+                live_transcript: msg.text,
+                conversation: {
+                  intent: msg.intent || 'ANALYZED',
+                  risk_signal: convRisk / 100,
+                  evidence: msg.evidence || `Transcribed: "${msg.text}"`,
+                  transcript: msg.text,
+                },
+                risk_score: compositeRisk,
+                risk_level: level as any,
+                action: action as any,
+                call_status: callStatus as any,
+                threat_signals: updatedSignals,
+                explanation: `Linguistic Threat (${msg.intent}): ${msg.evidence}\nCaller spoken phrase: "${msg.text}"\nAction: ${action}`,
+              };
+            });
           }
         } catch {
           // Non-JSON or binary
@@ -218,16 +258,58 @@ export function useVigilWebSocket() {
 
               const currentPhrase = (finalTxt || interim).trim();
               if (currentPhrase) {
-                setTelemetry((prev) => ({
-                  ...prev,
-                  live_transcript: currentPhrase,
-                  conversation: {
-                    intent: prev.conversation?.intent || 'NOMINAL',
-                    risk_signal: prev.conversation?.risk_signal || 0.05,
-                    evidence: `Transcribed caller speech: "${currentPhrase}"`,
-                    transcript: currentPhrase,
-                  },
-                }));
+                const lower = currentPhrase.toLowerCase();
+                let immediateRisk = 10;
+                let immediateIntent = 'NOMINAL';
+                let immediateEvidence = `Transcribed caller speech: "${currentPhrase}"`;
+
+                const isOtpScam = /(otp|password|passcode|pin code|security code|verify code)/i.test(lower) && /(send|give|tell|share|read out|enter|provide|need)/i.test(lower);
+                const isWireUrgent = /(transfer|wire|send money|pay|upi|deposit)/i.test(lower) && /(urgent|immediately|right now|accident|hospital|emergency|police|jail)/i.test(lower);
+                const isFinancial = /(transfer|wire|send money|pay|deposit|rupees|dollars|bank account|upi id)/i.test(lower);
+                const isOtpMention = /(otp|password|pin code)/i.test(lower);
+
+                if (isOtpScam) {
+                  immediateRisk = 95;
+                  immediateIntent = 'OTP_REQUEST';
+                  immediateEvidence = `CRITICAL FRAUD: Caller demanding authentication OTP/credential: "${currentPhrase}"`;
+                } else if (isWireUrgent) {
+                  immediateRisk = 90;
+                  immediateIntent = 'EMERGENCY_MONEY_REQUEST';
+                  immediateEvidence = `CRITICAL FRAUD: Emergency coercion financial solicitation: "${currentPhrase}"`;
+                } else if (isFinancial || isOtpMention) {
+                  immediateRisk = 65;
+                  immediateIntent = 'FINANCIAL_REQUEST';
+                  immediateEvidence = `HIGH RISK: Financial payment / credential discussion: "${currentPhrase}"`;
+                }
+
+                setTelemetry((prev) => {
+                  const newScore = Math.max(prev.risk_score, immediateRisk);
+                  const newLevel = newScore >= 80 ? 'CRITICAL' : (newScore >= 50 ? 'HIGH' : (newScore >= 30 ? 'MEDIUM' : prev.risk_level));
+                  const newAction = newScore >= 80 ? 'BLOCK' : (newScore >= 50 ? 'WARN' : (newScore >= 30 ? 'CHALLENGE' : prev.action));
+                  const newCallStatus = newAction === 'BLOCK' ? 'BLOCKED' : (newAction === 'WARN' ? 'WARNED' : (newAction === 'CHALLENGE' ? 'CHALLENGING' : prev.call_status));
+                  const newSignals = immediateRisk >= 50
+                    ? [`Linguistic Threat: ${immediateIntent}`, ...prev.threat_signals.filter((s) => !s.startsWith('Linguistic'))]
+                    : prev.threat_signals;
+
+                  return {
+                    ...prev,
+                    live_transcript: currentPhrase,
+                    conversation: {
+                      intent: immediateIntent,
+                      risk_signal: immediateRisk / 100,
+                      evidence: immediateEvidence,
+                      transcript: currentPhrase,
+                    },
+                    risk_score: newScore,
+                    risk_level: newLevel as any,
+                    action: newAction as any,
+                    call_status: newCallStatus as any,
+                    threat_signals: newSignals,
+                    explanation: immediateRisk >= 50
+                      ? `Linguistic Threat Alert (${immediateIntent}): ${immediateEvidence}\nCaller phrase: "${currentPhrase}"`
+                      : prev.explanation,
+                  };
+                });
               }
 
               if (finalTxt.trim() && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {

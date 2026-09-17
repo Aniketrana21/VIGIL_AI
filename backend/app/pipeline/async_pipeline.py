@@ -204,10 +204,24 @@ class AsyncInferencePipeline:
         self._last_latency: Optional[LatencyProfile] = None
         self._audio_state = "IDLE"
         self._connection_state = "CONNECTED"
+        self._contextual_signals: List[str] = []
+        self._conversational_risk_score: int = 0
+        self._last_transcript: str = ""
 
         # Worker tasks
         self._tasks: List[asyncio.Task] = []
         self._running = False
+
+    def add_contextual_signal(self, signal: str, transcript: Optional[str] = None, conv_risk: int = 0) -> None:
+        """Injects linguistic scam/fraud intent from spoken speech into the streaming risk engine."""
+        with self._lock:
+            if signal and signal not in self._contextual_signals:
+                self._contextual_signals.append(signal)
+            if conv_risk > self._conversational_risk_score:
+                self._conversational_risk_score = conv_risk
+            if transcript:
+                self._last_transcript = transcript
+            logger.info(f"Session {self.session_id} received contextual signal: {signal} (Conv Risk: {conv_risk})")
 
     async def start(self) -> None:
         """Launch background workers."""
@@ -469,6 +483,11 @@ class AsyncInferencePipeline:
             if vad_decision:
                 audio_qual = min(1.0, max(0.2, (vad_decision.rms_db + 60.0) / 60.0))
 
+            with self._lock:
+                active_context = list(self._contextual_signals)
+                conv_score = self._conversational_risk_score
+                last_trans = self._last_transcript
+
             risk_input = RiskEngineInput(
                 deepfake_probability=smoothed_spoof,
                 speaker_similarity=spk_sim,
@@ -476,9 +495,26 @@ class AsyncInferencePipeline:
                 caller_verified=True,
                 audio_quality=round(audio_qual, 3),
                 model_confidence=smoothed_confidence,
-                contextual_signals=[],
+                contextual_signals=active_context,
             )
             risk_result = self.risk_engine.evaluate_risk(risk_input)
+
+            # Elevate composite risk if conversational scam/fraud intent is detected
+            if conv_score > risk_result.risk_score:
+                elevated_score = max(risk_result.risk_score, conv_score)
+                elevated_level = "CRITICAL" if elevated_score >= 80 else ("HIGH" if elevated_score >= 50 else ("MEDIUM" if elevated_score >= 30 else "LOW"))
+                elevated_action = "BLOCK" if elevated_score >= 80 else ("WARN" if elevated_score >= 50 else ("CHALLENGE" if elevated_score >= 30 else "ALLOW"))
+                expl_prefix = f"Linguistic Threat ({', '.join(active_context)}): Spoken speech \"{last_trans}\"\n" if last_trans else ""
+                risk_result = RiskEvaluationResult(
+                    risk_score=elevated_score,
+                    risk_level=elevated_level,
+                    action=elevated_action,
+                    confidence=max(risk_result.confidence, 0.95),
+                    signals=list(set(risk_result.signals + active_context)),
+                    contributing_signals=risk_result.contributing_signals + [f"Linguistic threat score: {conv_score}/100"],
+                    explanation=expl_prefix + risk_result.explanation,
+                )
+
             self._last_risk = risk_result
 
             profile.risk_engine_ms = (time.perf_counter() - t0) * 1000.0

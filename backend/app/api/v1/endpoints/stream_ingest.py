@@ -133,6 +133,12 @@ async def websocket_audio_ingest(
                             else:
                                 threat_lvl = "LOW"
                                 act = "ALLOW"
+
+                            # Inject linguistic intent into active async audio pipeline
+                            try:
+                                pipeline.add_contextual_signal(ci_result.intent.value, transcript=transcript_text, conv_risk=risk_val)
+                            except Exception as pipe_err:
+                                logger.debug(f"Pipeline contextual signal notice: {pipe_err}")
                                 
                             evt = DetectionEvent(
                                 session_id=clean_session_id,
