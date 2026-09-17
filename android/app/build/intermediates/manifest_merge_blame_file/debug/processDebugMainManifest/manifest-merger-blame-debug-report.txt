@@ -1,0 +1,120 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.vigilai"
+4    android:versionCode="1"
+5    android:versionName="1.0.0" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="29"
+9        android:targetSdkVersion="34" />
+10
+11    <!-- Permissions for Android Telephony Screening (MODE B) and Mic Streaming (MODE A) -->
+12    <uses-permission android:name="android.permission.INTERNET" />
+12-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:6:5-67
+12-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:6:22-64
+13    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+13-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:7:5-75
+13-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:7:22-72
+14    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+14-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:8:5-71
+14-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:8:22-68
+15    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+15-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:9:5-78
+15-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:9:22-75
+16    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+16-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:10:5-77
+16-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:10:22-74
+17    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+17-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:11:5-88
+17-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:11:22-85
+18    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+18-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:12:5-77
+18-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:12:22-74
+19
+20    <permission
+20-->[androidx.core:core:1.12.0] C:\Users\ANIKET\.gradle\caches\8.9\transforms\023e76118fe86bacf5df31da3a7c48e5\transformed\core-1.12.0\AndroidManifest.xml:22:5-24:47
+21        android:name="com.vigilai.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+21-->[androidx.core:core:1.12.0] C:\Users\ANIKET\.gradle\caches\8.9\transforms\023e76118fe86bacf5df31da3a7c48e5\transformed\core-1.12.0\AndroidManifest.xml:23:9-81
+22        android:protectionLevel="signature" />
+22-->[androidx.core:core:1.12.0] C:\Users\ANIKET\.gradle\caches\8.9\transforms\023e76118fe86bacf5df31da3a7c48e5\transformed\core-1.12.0\AndroidManifest.xml:24:9-44
+23
+24    <uses-permission android:name="com.vigilai.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+24-->[androidx.core:core:1.12.0] C:\Users\ANIKET\.gradle\caches\8.9\transforms\023e76118fe86bacf5df31da3a7c48e5\transformed\core-1.12.0\AndroidManifest.xml:26:5-97
+24-->[androidx.core:core:1.12.0] C:\Users\ANIKET\.gradle\caches\8.9\transforms\023e76118fe86bacf5df31da3a7c48e5\transformed\core-1.12.0\AndroidManifest.xml:26:22-94
+25
+26    <application
+26-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:14:5-53:19
+27        android:allowBackup="false"
+27-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:15:9-36
+28        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+28-->[androidx.core:core:1.12.0] C:\Users\ANIKET\.gradle\caches\8.9\transforms\023e76118fe86bacf5df31da3a7c48e5\transformed\core-1.12.0\AndroidManifest.xml:28:18-86
+29        android:debuggable="true"
+30        android:extractNativeLibs="false"
+31        android:icon="@android:drawable/ic_secure"
+31-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:16:9-51
+32        android:label="VIGIL-AI"
+32-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:17:9-33
+33        android:roundIcon="@android:drawable/ic_secure"
+33-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:18:9-56
+34        android:supportsRtl="true"
+34-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:19:9-35
+35        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+35-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:20:9-72
+36        android:usesCleartextTraffic="true" >
+36-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:21:9-44
+37
+38        <!-- Android MODE B Call Screening Service -->
+39        <service
+39-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:24:9-31:19
+40            android:name="com.vigilai.service.VigilCallScreeningService"
+40-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:25:13-62
+41            android:exported="true"
+41-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:27:13-36
+42            android:permission="android.permission.BIND_SCREENING_SERVICE" >
+42-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:26:13-75
+43            <intent-filter>
+43-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:28:13-30:29
+44                <action android:name="android.telecom.CallScreeningService" />
+44-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:29:17-79
+44-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:29:25-76
+45            </intent-filter>
+46        </service>
+47
+48        <!-- Heads-Up Alert Overlay HUD Service -->
+49        <service
+49-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:34:9-36:40
+50            android:name="com.vigilai.service.CallAlertOverlayService"
+50-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:35:13-60
+51            android:exported="false" />
+51-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:36:13-37
+52
+53        <!-- MODE A In-Call / VoIP Audio Streamer Service -->
+54        <service
+54-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:39:9-42:40
+55            android:name="com.vigilai.service.AudioStreamVoipService"
+55-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:40:13-59
+56            android:exported="false"
+56-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:42:13-37
+57            android:foregroundServiceType="microphone" />
+57-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:41:13-55
+58
+59        <activity
+59-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:44:9-51:20
+60            android:name="com.vigilai.ui.MainActivity"
+60-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:45:13-44
+61            android:exported="true" >
+61-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:46:13-36
+62            <intent-filter>
+62-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:47:13-50:29
+63                <action android:name="android.intent.action.MAIN" />
+63-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:48:17-69
+63-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:48:25-66
+64
+65                <category android:name="android.intent.category.LAUNCHER" />
+65-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:49:17-77
+65-->C:\Users\ANIKET\OneDrive\Desktop\VIGIL_AI\android\app\src\main\AndroidManifest.xml:49:27-74
+66            </intent-filter>
+67        </activity>
+68    </application>
+69
+70</manifest>
