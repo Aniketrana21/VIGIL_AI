@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: vigil-ai
+    env: docker
+    dockerfilePath: Dockerfile
+    plan: free
+    region: oregon
+    healthCheckPath: /api/v1/health/live
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: API_KEY
+        value: vigil-ai-hackathon-demo-key-2026
+      - key: BIOMETRIC_ENCRYPTION_KEY
+        value: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      - key: ALLOW_ANONYMOUS_DEV
+        value: "true"
+      - key: WS_AUTH_REQUIRED
+        value: "false"
+      - key: RATE_LIMIT_PER_MINUTE
+        value: "300"

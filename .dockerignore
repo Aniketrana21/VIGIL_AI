@@ -1,0 +1,14 @@
+.git
+.github
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+tests
+.env
+android
+frontend/node_modules
+*.wav
+*.mp3
+*.flac

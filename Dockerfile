@@ -14,12 +14,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /app/
+COPY backend/requirements.txt /app/
 # Install lightweight CPU-only PyTorch to fit comfortably in Render's 512MB free tier memory
 RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . /app/
+COPY backend/ /app/
 
 EXPOSE 8000
 
