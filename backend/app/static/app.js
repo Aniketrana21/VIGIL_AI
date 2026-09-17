@@ -238,7 +238,10 @@ function updateTelemetryUI(d, windowsCount) {
     const risk = d.risk;
     const score = risk.risk_score || 0;
     const level = risk.risk_level || "LOW";
-    const action = risk.recommended_action || "ALLOW";
+    const action = risk.action || risk.recommended_action || "ALLOW";
+    const policyVer = risk.policy_version || "v2026.09.1-prod";
+    const dispPolicy = document.getElementById("disp-policy-version");
+    if (dispPolicy) dispPolicy.textContent = policyVer.startsWith("v") ? policyVer : `v${policyVer}`;
 
     if (dispRiskScore) {
       dispRiskScore.textContent = score;
@@ -264,7 +267,7 @@ function updateTelemetryUI(d, windowsCount) {
 
     if (riskActionBadge) {
       riskActionBadge.textContent = action;
-      riskActionBadge.className = `verdict-pill verdict-${action === "BLOCK" ? "block" : action === "WARN" ? "warn" : action === "CHALLENGE" ? "uncertain" : "allow"}`;
+      riskActionBadge.className = `verdict-pill verdict-${action === "BLOCK" ? "block" : action === "WARN" ? "warn" : action === "CHALLENGE" ? "uncertain" : action === "MONITOR" ? "monitor" : "allow"}`;
     }
 
     if (dispRiskSignalsCount) {

@@ -298,6 +298,7 @@ body.dark-mode {
 .verdict-idle { background: rgba(255, 255, 255, 0.05); color: var(--text-muted); }
 .verdict-allow { background: rgba(16, 185, 129, 0.2); color: var(--emerald-accent); border: 1px solid var(--emerald-accent); }
 .verdict-warn { background: rgba(245, 158, 11, 0.2); color: var(--amber-accent); border: 1px solid var(--amber-accent); }
+.verdict-monitor { background: rgba(56, 189, 248, 0.2); color: var(--cyan-accent); border: 1px solid var(--cyan-accent); }
 .verdict-block { background: rgba(244, 63, 94, 0.2); color: var(--crimson-accent); border: 1px solid var(--crimson-accent); }
 .verdict-uncertain { background: rgba(168, 85, 247, 0.2); color: var(--purple-accent); border: 1px solid var(--purple-accent); }
 
@@ -895,6 +896,12 @@ body.dark-mode {
   background: rgba(16, 185, 129, 0.2);
   color: var(--emerald-accent);
   border: 1px solid var(--emerald-accent);
+}
+
+.badge-action-monitor {
+  background: rgba(56, 189, 248, 0.2);
+  color: var(--cyan-accent);
+  border: 1px solid var(--cyan-accent);
 }
 
 .badge-action-challenge {

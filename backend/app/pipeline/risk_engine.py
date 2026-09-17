@@ -29,45 +29,81 @@ class RiskEngineInput:
     """
     Standard input payload for the VIGIL-AI Multi-Signal Risk Engine.
     Combines acoustic deepfake detection, biometric speaker verification,
-    acoustic liveness analysis, telephony metadata, audio quality, and contextual signals.
+    acoustic liveness analysis, telephony metadata, audio quality, contextual signals,
+    and historical signals.
     """
     deepfake_probability: float
     speaker_similarity: Optional[float] = None
     liveness_score: float = 1.0  # 1.0 = live vocal tract acoustic emission, 0.0 = loudspeaker replay
+    replay_probability: Optional[float] = None  # 0.0 to 1.0
     caller_verified: bool = True  # STIR/SHAKEN A-attestation or telephony verification
+    conversation_risk: float = 0.0  # 0.0 to 1.0 from Phase 11 Conversation Intelligence
     audio_quality: float = 1.0  # 0.0 = severely clipped/degraded/low-SNR, 1.0 = pristine studio
     model_confidence: float = 1.0  # 0.0 to 1.0 confidence score
     contextual_signals: List[str] = field(default_factory=list)  # e.g. ["FINANCIAL_REQUEST"]
+    historical_signals: List[str] = field(default_factory=list)  # e.g. ["PREVIOUS_CHALLENGE_FAILED"]
+    caller_id: Optional[str] = None
+    session_id: Optional[str] = None
+
+    @property
+    def deepfake_score(self) -> float:
+        return self.deepfake_probability
+
+    @property
+    def caller_verification_status(self) -> bool:
+        return self.caller_verified
 
 
 @dataclass
 class RiskEvaluationResult:
     """
     Standard output payload of the Multi-Signal Risk Engine.
-    Transparent, human-explainable, and non-linear.
+    Transparent, human-explainable, non-linear, and policy-versioned.
+    Conforms to Phase 12 specification:
+    {
+      "risk_score": 0-100,
+      "risk_level": "LOW | MEDIUM | HIGH | CRITICAL",
+      "action": "ALLOW | MONITOR | CHALLENGE | WARN | BLOCK",
+      "confidence": 0-1,
+      "signals": [],
+      "explanation": ""
+    }
     """
     risk_score: int  # 0-100
     risk_level: str  # "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
-    recommended_action: str  # "ALLOW" | "CHALLENGE" | "WARN" | "BLOCK"
+    recommended_action: str  # "ALLOW" | "MONITOR" | "CHALLENGE" | "WARN" | "BLOCK"
     signals: List[str]  # e.g. ["HIGH_SYNTHETIC_PROBABILITY", "SPEAKER_MISMATCH", ...]
     confidence: float  # 0.0 to 1.0
     contributing_signals: List[str] = field(default_factory=list)  # Formatted human-readable descriptions
     explanation: str = ""
+    individual_scores: Dict[str, Any] = field(default_factory=dict)
+    policy_version: str = "2026.09.1-production"
+    requires_human_verification: bool = False
+
+    @property
+    def action(self) -> str:
+        return self.recommended_action
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "risk_score": self.risk_score,
             "risk_level": self.risk_level,
+            "action": self.action,
             "recommended_action": self.recommended_action,
             "signals": self.signals,
             "confidence": round(self.confidence, 3),
             "contributing_signals": self.contributing_signals,
             "explanation": self.explanation or self.format_explanation(),
+            "individual_scores": self.individual_scores,
+            "policy_version": self.policy_version,
+            "requires_human_verification": self.requires_human_verification,
         }
 
     def format_explanation(self) -> str:
         lines = [
-            f"Risk Score: {self.risk_score}",
+            f"VIGIL-AI Risk Score: {self.risk_score}/100 [{self.risk_level} RISK]",
+            f"Action: {self.action} (Confidence: {int(self.confidence * 100)}%)",
+            f"Recommended action: {self.action}",
             "",
             "Contributing signals:",
         ]
@@ -76,7 +112,8 @@ class RiskEvaluationResult:
                 lines.append(f"✓ {sig}")
         else:
             lines.append("✓ No abnormal threat signals detected (nominal)")
-        lines.append(f"Recommended action: {self.recommended_action}")
+        lines.append("")
+        lines.append("Note: Probabilistic ML assessment. VIGIL-AI does not assert 100% certainty; policy avoids unilateral irreversible action on uncertain data.")
         return "\n".join(lines)
 
 
@@ -282,6 +319,18 @@ class MultiFactorRiskEngine:
             elif risk_score > self.allow_max and action == "ALLOW":
                 action = "CHALLENGE"
 
+        individual_scores = {
+            "deepfake_score": round(p_df, 3),
+            "speaker_similarity": round(sim, 3) if sim is not None else None,
+            "liveness_score": round(liveness, 3),
+            "replay_probability": round(risk_input.replay_probability if risk_input.replay_probability is not None else (1.0 - liveness), 3),
+            "caller_verification_status": caller_verified,
+            "conversation_risk": round(risk_input.conversation_risk, 3),
+            "model_confidence": round(conf, 3),
+            "audio_quality": round(audio_qual, 3),
+        }
+        requires_human = is_low_confidence or (liveness >= 0.90 and 0.50 <= p_df < 0.85)
+
         result = RiskEvaluationResult(
             risk_score=risk_score,
             risk_level=risk_level,
@@ -289,6 +338,9 @@ class MultiFactorRiskEngine:
             signals=signals,
             confidence=conf,
             contributing_signals=contrib,
+            individual_scores=individual_scores,
+            policy_version="2026.09.1-production",
+            requires_human_verification=requires_human,
         )
         result.explanation = result.format_explanation()
         return result
