@@ -71,7 +71,10 @@ class DeviceManager:
                 dev = torch.device("cuda")
                 name = torch.cuda.get_device_name(0)
                 cuda_ver = torch.version.cuda or "unknown"
-                mem_mb = int(torch.cuda.get_device_properties(0).total_mem / (1024 * 1024))
+                props = torch.cuda.get_device_properties(0)
+                total_bytes = getattr(props, "total_memory", getattr(props, "total_mem", 0))
+                mem_mb = int(total_bytes / (1024 * 1024))
+
                 # Warmup allocation
                 try:
                     _warmup = torch.zeros(1, device=dev)

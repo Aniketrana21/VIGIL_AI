@@ -231,10 +231,15 @@ class ECAPATDNNEncoder(SpeakerEncoder):
         self.min_samples = int(min_duration_sec * sample_rate)
 
         # Hardware selection
-        if device is None:
+        if device is None or str(device).lower() in ("auto", "none"):
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        elif str(device).lower().startswith("cuda"):
+            self.device = str(device).lower() if torch.cuda.is_available() else "cpu"
+        elif str(device).lower() == "mps":
+            self.device = "mps" if (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()) else "cpu"
         else:
-            self.device = device if (device == "cpu" or torch.cuda.is_available()) else "cpu"
+            self.device = "cpu"
+
 
         logger.info(f"Initializing {self.MODEL_VERSION} (dim={self.embedding_dim}) on device '{self.device}'...")
 
