@@ -13,6 +13,7 @@ export const App: React.FC = () => {
     telemetry,
     isStreaming,
     toggleStreaming,
+    sendTranscriptText,
     audioAnalyser,
     simulateScenario,
     triggerVerifyIdentity,
@@ -82,6 +83,7 @@ export const App: React.FC = () => {
             waveformSample={activeTelemetry.waveform_sample}
             explanation={activeTelemetry.explanation}
             callerTranscript={activeTelemetry.live_transcript || activeTelemetry.conversation?.transcript}
+            onSendTranscript={sendTranscriptText}
           />
 
           {/* RIGHT PANEL: THREAT SIGNALS, TIMELINE, CONVERSATION INTELLIGENCE */}

@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { Mic, Radio } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Mic, Radio, Send } from 'lucide-react';
 
 interface CenterPanelProps {
   callStatus: 'MONITORING' | 'CHALLENGING' | 'WARNED' | 'BLOCKED';
@@ -18,6 +18,7 @@ interface CenterPanelProps {
   waveformSample?: number[];
   explanation?: string;
   callerTranscript?: string;
+  onSendTranscript?: (text: string) => void;
 }
 
 // Generate ASCII bar block (e.g. ████████████░ 91%)
@@ -45,8 +46,10 @@ export const CenterPanel: React.FC<CenterPanelProps> = ({
   waveformSample,
   explanation,
   callerTranscript,
+  onSendTranscript,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [inputText, setInputText] = useState('');
 
   // Live Oscilloscope Waveform Drawer
   useEffect(() => {
@@ -342,6 +345,58 @@ export const CenterPanel: React.FC<CenterPanelProps> = ({
               <span>Start microphone and speak, or run a demo scenario — spoken caller text will appear here and evaluate in real time.</span>
             </div>
           )}
+        </div>
+
+        {/* Real-time Spoken Text Evaluation & DB Verification Form */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (inputText.trim() && onSendTranscript) {
+              onSendTranscript(inputText.trim());
+              setInputText('');
+            }
+          }}
+          className="flex items-center gap-2 mt-2.5 pt-2.5 border-t border-slate-800/80"
+        >
+          <input
+            type="text"
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            placeholder="Type or test caller phrase (e.g. 'Please share your bank OTP right now')..."
+            className="flex-1 bg-slate-950 border border-slate-700/80 rounded px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-sans"
+          />
+          <button
+            type="submit"
+            className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs font-bold transition flex items-center gap-1.5 shadow"
+          >
+            <Send className="w-3 h-3" />
+            <span>Evaluate &amp; Save</span>
+          </button>
+        </form>
+
+        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+          <span className="text-[10px] text-slate-500 font-sans font-medium">Quick Verify:</span>
+          <button
+            type="button"
+            onClick={() => onSendTranscript?.("This is bank security, read the 6-digit OTP code sent to your phone immediately")}
+            className="text-[10px] px-2 py-0.5 rounded bg-rose-950/60 hover:bg-rose-900 border border-rose-800/60 text-rose-300 font-mono transition"
+          >
+            🚨 Bank OTP Scam
+          </button>
+          <button
+            type="button"
+            onClick={() => onSendTranscript?.("Urgent: Police emergency, wire transfer 50,000 rupees right now")}
+            className="text-[10px] px-2 py-0.5 rounded bg-amber-950/60 hover:bg-amber-900 border border-amber-800/60 text-amber-300 font-mono transition"
+          >
+            ⚠️ Emergency Wire Fraud
+          </button>
+          <button
+            type="button"
+            onClick={() => onSendTranscript?.("Hello Aniket, are we still meeting for the team lunch today?")}
+            className="text-[10px] px-2 py-0.5 rounded bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-800/60 text-emerald-300 font-mono transition"
+          >
+            ✅ Normal Voice Call
+          </button>
         </div>
       </div>
 

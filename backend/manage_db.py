@@ -58,6 +58,7 @@ def cmd_get(args):
     print("=" * 70)
     print(f"• Session ID            : {event.session_id}")
     print(f"• Timestamp             : {event.timestamp}")
+    print(f"• Spoken Text           : \"{event.transcript or 'None'}\"")
     print(f"• Deepfake Score        : {event.deepfake_score} (Label: {event.deepfake_label})")
     print(f"• Speaker ID            : {event.speaker_id or 'UNKNOWN'}")
     print(f"• Speaker Similarity    : {event.speaker_similarity}")
@@ -84,6 +85,7 @@ def cmd_add(args):
 
     event = DetectionEvent(
         session_id=session_id,
+        transcript=getattr(args, "transcript", None),
         risk_score=risk_score,
         risk_level=risk_level,
         action=action,
@@ -129,6 +131,8 @@ def cmd_update(args):
         updates["deepfake_label"] = args.label
     if args.explanation:
         updates["explanation"] = args.explanation
+    if getattr(args, "transcript", None):
+        updates["transcript"] = args.transcript
     if args.caller:
         updates["caller_id"] = args.caller
 
@@ -282,6 +286,7 @@ def main():
     p_add.add_argument("--conv-risk", type=float, help="Conversation risk")
     p_add.add_argument("--confidence", type=float, default=0.90, help="Confidence")
     p_add.add_argument("--signals", type=str, help="Comma-separated threat flags")
+    p_add.add_argument("--transcript", "-t", type=str, help="Spoken text or transcript")
     p_add.add_argument("--explanation", "-e", type=str, help="Explanation note")
     p_add.add_argument("--caller", type=str, help="Caller ID")
     p_add.set_defaults(func=cmd_add)
@@ -294,6 +299,7 @@ def main():
     p_upd.add_argument("--action", "-a", type=str, choices=["ALLOW", "MONITOR", "CHALLENGE", "WARN", "BLOCK"], help="New action")
     p_upd.add_argument("--deepfake", "-d", type=float, help="New deepfake score")
     p_upd.add_argument("--label", type=str, help="New deepfake label")
+    p_upd.add_argument("--transcript", "-t", type=str, help="New spoken text / transcript")
     p_upd.add_argument("--explanation", "-e", type=str, help="New explanation")
     p_upd.add_argument("--caller", type=str, help="New caller ID")
     p_upd.set_defaults(func=cmd_update)

@@ -508,7 +508,7 @@ class AsyncInferencePipeline:
                 risk_result = RiskEvaluationResult(
                     risk_score=elevated_score,
                     risk_level=elevated_level,
-                    action=elevated_action,
+                    recommended_action=elevated_action,
                     confidence=max(risk_result.confidence, 0.95),
                     signals=list(set(risk_result.signals + active_context)),
                     contributing_signals=risk_result.contributing_signals + [f"Linguistic threat score: {conv_score}/100"],
@@ -526,6 +526,7 @@ class AsyncInferencePipeline:
                 from app.db.detection_store import DetectionEvent, record_detection_event
                 evt = DetectionEvent(
                     session_id=self.session_id,
+                    transcript=self._last_transcript or None,
                     risk_score=risk_result.risk_score,
                     risk_level=risk_result.risk_level,
                     action=risk_result.action,

@@ -233,8 +233,10 @@ class StreamingSessionManager:
                     replay_prob = self.last_liveness_result.replay_probability if self.last_liveness_result else round(1.0 - liveness_score, 3)
                     df_lbl = self.last_deepfake_result.label if self.last_deepfake_result else None
                     spk_id = self.last_speaker_result.speaker_id if self.last_speaker_result else self.claimed_speaker_id
+                    conv_txt = self.last_conversation_result.transcript if self.last_conversation_result else None
                     evt = DetectionEvent(
                         session_id=self.session_id,
+                        transcript=conv_txt,
                         risk_score=self.last_risk_result.risk_score,
                         risk_level=self.last_risk_result.risk_level,
                         action=self.last_risk_result.action,

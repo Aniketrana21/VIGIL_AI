@@ -148,6 +148,7 @@ def run_pipeline_with_audio_file(audio_path: str, transcript: str = "Hello this 
     # Persist to database
     db_event = DetectionEvent(
         session_id=session_id,
+        transcript=transcript,
         risk_score=verdict.risk_score,
         risk_level=verdict.risk_level,
         action=verdict.action,

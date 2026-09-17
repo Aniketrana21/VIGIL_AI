@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 import json
 import os
+from pathlib import Path
 import sqlite3
 import threading
 from typing import Any, Dict, List, Optional
@@ -42,6 +43,7 @@ class DetectionEvent:
     contributing_signals: List[str] = field(default_factory=list)
     explanation: str = ""
     caller_id: Optional[str] = None
+    transcript: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     id: Optional[int] = None
@@ -62,11 +64,12 @@ class DetectionEvent:
             "risk_score": self.risk_score,
             "risk_level": self.risk_level,
             "action": self.action,
-            "confidence": round(self.confidence, 3),
+            "confidence": self.confidence,
             "signals": self.signals,
             "contributing_signals": self.contributing_signals,
             "explanation": self.explanation,
             "caller_id": self.caller_id,
+            "transcript": self.transcript,
             "metadata": self.metadata,
         }
 
@@ -242,8 +245,14 @@ class SQLiteDetectionStore(DetectionStore):
     Robust local relational database store using SQLite.
     Guarantees that detection events enter a database table even in local or air-gapped environments.
     """
-    def __init__(self, db_path: str = "vigil_detections.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: Optional[str] = None):
+        if not db_path:
+            db_path = str(Path(__file__).resolve().parent.parent.parent / "vigil_detections.db")
+        elif not Path(db_path).is_absolute():
+            # If relative path is passed, resolve relative to backend root
+            backend_root = Path(__file__).resolve().parent.parent.parent
+            db_path = str((backend_root / db_path).resolve())
+        self.db_path = str(db_path)
         self._lock = threading.Lock()
         self._init_db()
 
@@ -254,6 +263,7 @@ class SQLiteDetectionStore(DetectionStore):
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     session_id TEXT NOT NULL,
                     timestamp TEXT NOT NULL,
+                    transcript TEXT,
                     deepfake_score REAL,
                     deepfake_label TEXT,
                     speaker_id TEXT,
@@ -273,6 +283,10 @@ class SQLiteDetectionStore(DetectionStore):
                     metadata TEXT NOT NULL
                 );
             """)
+            try:
+                conn.execute("ALTER TABLE detection_events ADD COLUMN transcript TEXT;")
+            except sqlite3.OperationalError:
+                pass
             conn.execute("CREATE INDEX IF NOT EXISTS idx_detection_session ON detection_events (session_id);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_detection_timestamp ON detection_events (timestamp DESC);")
             conn.commit()
@@ -283,15 +297,16 @@ class SQLiteDetectionStore(DetectionStore):
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO detection_events (
-                    session_id, timestamp, deepfake_score, deepfake_label,
+                    session_id, timestamp, transcript, deepfake_score, deepfake_label,
                     speaker_id, speaker_similarity, liveness_score, replay_probability,
                     conversation_intent, conversation_risk, risk_score, risk_level,
                     action, confidence, signals, contributing_signals, explanation,
                     caller_id, metadata
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 event.session_id,
                 event.timestamp,
+                event.transcript,
                 event.deepfake_score,
                 event.deepfake_label,
                 event.speaker_id,
@@ -328,10 +343,13 @@ class SQLiteDetectionStore(DetectionStore):
             rows = cursor.fetchall()
             results = []
             for r in rows:
+                meta = json.loads(r["metadata"]) if r["metadata"] else {}
+                transcript_text = r["transcript"] if "transcript" in r.keys() and r["transcript"] else meta.get("transcript")
                 results.append(DetectionEvent(
                     id=r["id"],
                     session_id=r["session_id"],
                     timestamp=r["timestamp"],
+                    transcript=transcript_text,
                     deepfake_score=r["deepfake_score"],
                     deepfake_label=r["deepfake_label"],
                     speaker_id=r["speaker_id"],
@@ -348,7 +366,7 @@ class SQLiteDetectionStore(DetectionStore):
                     contributing_signals=json.loads(r["contributing_signals"]) if r["contributing_signals"] else [],
                     explanation=r["explanation"] or "",
                     caller_id=r["caller_id"],
-                    metadata=json.loads(r["metadata"]) if r["metadata"] else {},
+                    metadata=meta,
                 ))
             return results
 
@@ -385,10 +403,13 @@ class SQLiteDetectionStore(DetectionStore):
             r = cursor.fetchone()
             if not r:
                 return None
+            meta = json.loads(r["metadata"]) if r["metadata"] else {}
+            transcript_text = r["transcript"] if "transcript" in r.keys() and r["transcript"] else meta.get("transcript")
             return DetectionEvent(
                 id=r["id"],
                 session_id=r["session_id"],
                 timestamp=r["timestamp"],
+                transcript=transcript_text,
                 deepfake_score=r["deepfake_score"],
                 deepfake_label=r["deepfake_label"],
                 speaker_id=r["speaker_id"],
@@ -405,7 +426,7 @@ class SQLiteDetectionStore(DetectionStore):
                 contributing_signals=json.loads(r["contributing_signals"]) if r["contributing_signals"] else [],
                 explanation=r["explanation"] or "",
                 caller_id=r["caller_id"],
-                metadata=json.loads(r["metadata"]) if r["metadata"] else {},
+                metadata=meta,
             )
 
     def delete_detection_sync(self, event_id: int) -> bool:
@@ -421,7 +442,8 @@ class SQLiteDetectionStore(DetectionStore):
         valid_cols = {
             "risk_score", "risk_level", "action", "deepfake_score", "deepfake_label",
             "speaker_id", "speaker_similarity", "liveness_score", "replay_probability",
-            "conversation_intent", "conversation_risk", "confidence", "explanation", "caller_id"
+            "conversation_intent", "conversation_risk", "confidence", "explanation", "caller_id",
+            "transcript"
         }
         filtered = {k: v for k, v in updates.items() if k in valid_cols}
         if "signals" in updates:

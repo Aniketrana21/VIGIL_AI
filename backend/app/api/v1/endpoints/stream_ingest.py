@@ -134,23 +134,27 @@ async def websocket_audio_ingest(
                                 threat_lvl = "LOW"
                                 act = "ALLOW"
 
+                            intent_str = ci_result.intent if isinstance(ci_result.intent, str) else getattr(ci_result.intent, "value", str(ci_result.intent))
+                            evidence_str = getattr(ci_result, "evidence", "") or ""
+
                             # Inject linguistic intent into active async audio pipeline
                             try:
-                                pipeline.add_contextual_signal(ci_result.intent.value, transcript=transcript_text, conv_risk=risk_val)
+                                pipeline.add_contextual_signal(intent_str, transcript=transcript_text, conv_risk=risk_val)
                             except Exception as pipe_err:
                                 logger.debug(f"Pipeline contextual signal notice: {pipe_err}")
                                 
                             evt = DetectionEvent(
                                 session_id=clean_session_id,
+                                transcript=transcript_text,
                                 risk_score=risk_val,
                                 risk_level=threat_lvl,
                                 action=act,
-                                conversation_intent=ci_result.intent.value,
+                                conversation_intent=intent_str,
                                 conversation_risk=round(ci_result.risk_signal, 3),
                                 confidence=0.95,
-                                signals=ci_result.signals,
-                                contributing_signals=[ci_result.evidence],
-                                explanation=f"Live Speaker Speech: \"{transcript_text}\" | Intent: {ci_result.intent.value} ({ci_result.evidence})",
+                                signals=[f"LINGUISTIC_{intent_str}"] if risk_val >= 30 else [],
+                                contributing_signals=[evidence_str] if evidence_str else [],
+                                explanation=f"Live Speaker Speech: \"{transcript_text}\" | Intent: {intent_str} ({evidence_str})",
                                 caller_id=parsed.get("caller_id", "MICROPHONE_SPEAKER"),
                                 metadata={
                                     "transcript": transcript_text,
@@ -164,11 +168,11 @@ async def websocket_audio_ingest(
                             await websocket.send_text(json.dumps({
                                 "type": "TRANSCRIPT_STORED",
                                 "text": transcript_text,
-                                "intent": ci_result.intent.value,
+                                "intent": intent_str,
                                 "risk_score": risk_val,
                                 "risk_level": threat_lvl,
                                 "action": act,
-                                "evidence": ci_result.evidence,
+                                "evidence": evidence_str,
                                 "stored_in_db": True,
                             }))
                         else:

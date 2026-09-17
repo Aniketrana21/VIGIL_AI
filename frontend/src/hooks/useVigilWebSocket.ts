@@ -49,6 +49,8 @@ export function useVigilWebSocket() {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const lastPingTimeRef = useRef<number>(0);
   const recognitionRef = useRef<any>(null);
+  const pendingSpeechTimeoutRef = useRef<any>(null);
+  const lastTransmittedPhraseRef = useRef<string>('');
 
   // Connect to FastAPI WebSocket Stream
   const connect = useCallback(() => {
@@ -179,10 +181,82 @@ export function useVigilWebSocket() {
     };
   }, [connect]);
 
+  // Transmit transcript text to FastAPI backend and update local telemetry
+  const sendTranscriptText = useCallback((text: string) => {
+    const clean = text.trim();
+    if (!clean) return;
+    lastTransmittedPhraseRef.current = clean;
+
+    const lower = clean.toLowerCase();
+    let immediateRisk = 10;
+    let immediateIntent = 'NOMINAL';
+    let immediateEvidence = `Transcribed caller speech: "${clean}"`;
+
+    const isOtpScam = /(otp|password|passcode|pin code|security code|verify code)/i.test(lower) && /(send|give|tell|share|read out|enter|provide|need)/i.test(lower);
+    const isWireUrgent = /(transfer|wire|send money|pay|upi|deposit)/i.test(lower) && /(urgent|immediately|right now|accident|hospital|emergency|police|jail)/i.test(lower);
+    const isFinancial = /(transfer|wire|send money|pay|deposit|rupees|dollars|bank account|upi id)/i.test(lower);
+    const isOtpMention = /(otp|password|pin code)/i.test(lower);
+
+    if (isOtpScam) {
+      immediateRisk = 95;
+      immediateIntent = 'OTP_REQUEST';
+      immediateEvidence = `CRITICAL FRAUD: Caller demanding authentication OTP/credential: "${clean}"`;
+    } else if (isWireUrgent) {
+      immediateRisk = 90;
+      immediateIntent = 'EMERGENCY_MONEY_REQUEST';
+      immediateEvidence = `CRITICAL FRAUD: Emergency coercion financial solicitation: "${clean}"`;
+    } else if (isFinancial || isOtpMention) {
+      immediateRisk = 65;
+      immediateIntent = 'FINANCIAL_REQUEST';
+      immediateEvidence = `HIGH RISK: Financial payment / credential discussion: "${clean}"`;
+    }
+
+    setTelemetry((prev) => {
+      const newScore = Math.max(prev.risk_score, immediateRisk);
+      const newLevel = newScore >= 80 ? 'CRITICAL' : (newScore >= 50 ? 'HIGH' : (newScore >= 30 ? 'MEDIUM' : prev.risk_level));
+      const newAction = newScore >= 80 ? 'BLOCK' : (newScore >= 50 ? 'WARN' : (newScore >= 30 ? 'CHALLENGE' : prev.action));
+      const newCallStatus = newAction === 'BLOCK' ? 'BLOCKED' : (newAction === 'WARN' ? 'WARNED' : (newAction === 'CHALLENGE' ? 'CHALLENGING' : prev.call_status));
+      const newSignals = immediateRisk >= 50
+        ? [`Linguistic Threat: ${immediateIntent}`, ...prev.threat_signals.filter((s) => !s.startsWith('Linguistic'))]
+        : prev.threat_signals;
+
+      return {
+        ...prev,
+        live_transcript: clean,
+        conversation: {
+          intent: immediateIntent,
+          risk_signal: immediateRisk / 100,
+          evidence: immediateEvidence,
+          transcript: clean,
+        },
+        risk_score: newScore,
+        risk_level: newLevel as any,
+        action: newAction as any,
+        call_status: newCallStatus as any,
+        threat_signals: newSignals,
+        explanation: immediateRisk >= 50
+          ? `Linguistic Threat Alert (${immediateIntent}): ${immediateEvidence}\nCaller phrase: "${clean}"`
+          : prev.explanation,
+      };
+    });
+
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'TRANSCRIPT',
+        text: clean,
+        is_final: true,
+        caller_id: 'MIC_CALLER',
+      }));
+    }
+  }, []);
+
   // Start / Stop Microphone Stream
   const toggleStreaming = async () => {
     if (isStreaming) {
       // Stop
+      if (pendingSpeechTimeoutRef.current) {
+        clearTimeout(pendingSpeechTimeoutRef.current);
+      }
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
@@ -258,67 +332,20 @@ export function useVigilWebSocket() {
 
               const currentPhrase = (finalTxt || interim).trim();
               if (currentPhrase) {
-                const lower = currentPhrase.toLowerCase();
-                let immediateRisk = 10;
-                let immediateIntent = 'NOMINAL';
-                let immediateEvidence = `Transcribed caller speech: "${currentPhrase}"`;
-
-                const isOtpScam = /(otp|password|passcode|pin code|security code|verify code)/i.test(lower) && /(send|give|tell|share|read out|enter|provide|need)/i.test(lower);
-                const isWireUrgent = /(transfer|wire|send money|pay|upi|deposit)/i.test(lower) && /(urgent|immediately|right now|accident|hospital|emergency|police|jail)/i.test(lower);
-                const isFinancial = /(transfer|wire|send money|pay|deposit|rupees|dollars|bank account|upi id)/i.test(lower);
-                const isOtpMention = /(otp|password|pin code)/i.test(lower);
-
-                if (isOtpScam) {
-                  immediateRisk = 95;
-                  immediateIntent = 'OTP_REQUEST';
-                  immediateEvidence = `CRITICAL FRAUD: Caller demanding authentication OTP/credential: "${currentPhrase}"`;
-                } else if (isWireUrgent) {
-                  immediateRisk = 90;
-                  immediateIntent = 'EMERGENCY_MONEY_REQUEST';
-                  immediateEvidence = `CRITICAL FRAUD: Emergency coercion financial solicitation: "${currentPhrase}"`;
-                } else if (isFinancial || isOtpMention) {
-                  immediateRisk = 65;
-                  immediateIntent = 'FINANCIAL_REQUEST';
-                  immediateEvidence = `HIGH RISK: Financial payment / credential discussion: "${currentPhrase}"`;
+                if (finalTxt.trim()) {
+                  if (pendingSpeechTimeoutRef.current) {
+                    clearTimeout(pendingSpeechTimeoutRef.current);
+                  }
+                  sendTranscriptText(finalTxt.trim());
+                } else {
+                  // Debounce interim words so speech is stored to DB even if final event is delayed
+                  if (pendingSpeechTimeoutRef.current) {
+                    clearTimeout(pendingSpeechTimeoutRef.current);
+                  }
+                  pendingSpeechTimeoutRef.current = setTimeout(() => {
+                    sendTranscriptText(currentPhrase);
+                  }, 900);
                 }
-
-                setTelemetry((prev) => {
-                  const newScore = Math.max(prev.risk_score, immediateRisk);
-                  const newLevel = newScore >= 80 ? 'CRITICAL' : (newScore >= 50 ? 'HIGH' : (newScore >= 30 ? 'MEDIUM' : prev.risk_level));
-                  const newAction = newScore >= 80 ? 'BLOCK' : (newScore >= 50 ? 'WARN' : (newScore >= 30 ? 'CHALLENGE' : prev.action));
-                  const newCallStatus = newAction === 'BLOCK' ? 'BLOCKED' : (newAction === 'WARN' ? 'WARNED' : (newAction === 'CHALLENGE' ? 'CHALLENGING' : prev.call_status));
-                  const newSignals = immediateRisk >= 50
-                    ? [`Linguistic Threat: ${immediateIntent}`, ...prev.threat_signals.filter((s) => !s.startsWith('Linguistic'))]
-                    : prev.threat_signals;
-
-                  return {
-                    ...prev,
-                    live_transcript: currentPhrase,
-                    conversation: {
-                      intent: immediateIntent,
-                      risk_signal: immediateRisk / 100,
-                      evidence: immediateEvidence,
-                      transcript: currentPhrase,
-                    },
-                    risk_score: newScore,
-                    risk_level: newLevel as any,
-                    action: newAction as any,
-                    call_status: newCallStatus as any,
-                    threat_signals: newSignals,
-                    explanation: immediateRisk >= 50
-                      ? `Linguistic Threat Alert (${immediateIntent}): ${immediateEvidence}\nCaller phrase: "${currentPhrase}"`
-                      : prev.explanation,
-                  };
-                });
-              }
-
-              if (finalTxt.trim() && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-                wsRef.current.send(JSON.stringify({
-                  type: 'TRANSCRIPT',
-                  text: finalTxt.trim(),
-                  is_final: true,
-                  caller_id: 'MIC_CALLER',
-                }));
               }
             };
 
@@ -524,6 +551,7 @@ export function useVigilWebSocket() {
     telemetry,
     isStreaming,
     toggleStreaming,
+    sendTranscriptText,
     audioAnalyser: analyserRef.current,
     simulateScenario,
     triggerVerifyIdentity,
