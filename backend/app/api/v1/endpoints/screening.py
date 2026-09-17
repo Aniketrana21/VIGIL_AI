@@ -87,9 +87,61 @@ async def evaluate_incoming_call(payload: AndroidScreeningRequest):
         )
         reason_str = "ALLOW: Low risk indicators."
 
-    return AndroidScreeningResponse(
+    response = AndroidScreeningResponse(
         action=action,
         risk_score=risk_score,
         reason=reason_str,
         recommendations=recommendations,
     )
+
+    # Persist detection event into PostgreSQL / SQLite database
+    try:
+        from app.db.detection_store import DetectionEvent, record_detection_event
+        level = "CRITICAL" if action == ScreeningAction.BLOCK else ("HIGH" if action == ScreeningAction.WARN else "LOW")
+        evt = DetectionEvent(
+            session_id=payload.device_id or "android-telephony",
+            risk_score=int(round(risk_score * 100)),
+            risk_level=level,
+            action=action.value if hasattr(action, "value") else str(action),
+            caller_id=masked_phone,
+            confidence=0.90,
+            signals=reasons,
+            contributing_signals=reasons,
+            explanation=reason_str,
+            metadata={
+                "caller_display_name": payload.caller_display_name,
+                "stir_shaken_status": payload.stir_shaken_status,
+                "call_type": getattr(payload, "call_type", "incoming"),
+            }
+        )
+        record_detection_event(evt)
+    except Exception as db_err:
+        logger.warning(f"Failed to record screening detection to DB: {db_err}")
+
+    return response
+
+
+@router.get(
+    "/detections",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(verify_api_key)],
+)
+async def get_recent_detections(session_id: str = None, limit: int = 50):
+    """Retrieves recent detection records from PostgreSQL / database."""
+    from app.db.detection_store import get_detection_store
+    store = get_detection_store()
+    records = await store.get_detections(session_id=session_id, limit=limit)
+    return {"count": len(records), "detections": [r.to_dict() for r in records]}
+
+
+@router.get(
+    "/stats",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(verify_api_key)],
+)
+async def get_detection_statistics():
+    """Retrieves aggregated database detection stats."""
+    from app.db.detection_store import get_detection_store
+    store = get_detection_store()
+    return await store.get_detection_stats()
+

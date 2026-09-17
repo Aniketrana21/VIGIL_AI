@@ -202,7 +202,19 @@ class ECAPATDNNEncoder(SpeakerEncoder):
     - Safe handling for short audio, noise, and silence
     - GPU/CPU fallback and warm-up
     """
+    MODEL_NAME = "ECAPA-TDNN Speaker Verifier"
     MODEL_VERSION = "Vigil-ECAPA-TDNN-v1.0"
+
+    def get_model_info(self) -> Dict[str, Any]:
+        return {
+            "name": self.MODEL_NAME,
+            "version": self.MODEL_VERSION,
+            "status": "READY",
+            "device": getattr(self, "device", "cpu"),
+            "embedding_dim": self.embedding_dim,
+            "checkpoint_loaded": getattr(self, "checkpoint_loaded", False),
+            "sample_rate": self.sample_rate,
+        }
 
     def __init__(
         self,

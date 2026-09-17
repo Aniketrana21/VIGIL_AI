@@ -1,8 +1,10 @@
 import base64
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 import numpy as np
 from pydantic import BaseModel, Field
+from app.core.audit_logger import audit_logger
+from app.core.security import sanitize_identifier, validate_audio_payload, verify_api_key
 from app.db.embedding_store import get_embedding_store
 from app.pipeline.speaker_service import SpeakerEnrollmentService, SpeakerVerificationService
 
@@ -10,8 +12,8 @@ router = APIRouter(prefix="/api/v1/speaker", tags=["Speaker Verification"])
 
 
 class SpeakerEnrollRequest(BaseModel):
-    speaker_id: str = Field(..., description="Unique speaker identifier (e.g. 'alice_101')", min_length=2)
-    name: str = Field(..., description="Display name of the speaker", min_length=1)
+    speaker_id: str = Field(..., description="Unique speaker identifier (e.g. 'alice_101')", min_length=2, max_length=64)
+    name: str = Field(..., description="Display name of the speaker", min_length=1, max_length=128)
     utterances_base64: List[str] = Field(
         ...,
         description="List of base64-encoded raw 16-bit 16kHz PCM audio utterances (minimum 3 required)",
@@ -53,8 +55,11 @@ class SpeakerProfileSummary(BaseModel):
 def _decode_pcm_base64(b64_str: str) -> np.ndarray:
     try:
         raw_bytes = base64.b64decode(b64_str)
+        validate_audio_payload(raw_bytes)
         int16_arr = np.frombuffer(raw_bytes, dtype=np.int16)
         return int16_arr.astype(np.float32) / 32768.0
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -63,12 +68,14 @@ def _decode_pcm_base64(b64_str: str) -> np.ndarray:
 
 
 @router.post("/enroll", response_model=SpeakerEnrollResponse)
-async def enroll_speaker(request: SpeakerEnrollRequest):
+async def enroll_speaker(request: SpeakerEnrollRequest, http_request: Request, _auth: bool = Depends(verify_api_key)):
     """
     Enrolls a speaker profile using multiple voice utterances (minimum 3).
     Privacy Note: Raw voice recordings are discarded immediately after embedding extraction.
-    Only unit-normalized 192-dim mathematical vectors are persisted.
+    Only unit-normalized 192-dim mathematical vectors are persisted (encrypted at rest).
     """
+    clean_speaker_id = sanitize_identifier(request.speaker_id)
+
     if len(request.utterances_base64) < 3:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -76,7 +83,7 @@ async def enroll_speaker(request: SpeakerEnrollRequest):
         )
 
     utterance_arrays = [_decode_pcm_base64(b64) for b64 in request.utterances_base64]
-    
+
     # Check that utterances have sufficient speech duration (>= 0.4s = 6400 samples)
     for idx, u in enumerate(utterance_arrays):
         if len(u) < 6400:
@@ -88,24 +95,35 @@ async def enroll_speaker(request: SpeakerEnrollRequest):
     enrollment_svc = SpeakerEnrollmentService()
     try:
         res = await enrollment_svc.enroll_speaker(
-            speaker_id=request.speaker_id,
-            name=request.name,
+            speaker_id=clean_speaker_id,
+            name=request.name.strip(),
             utterances=utterance_arrays,
             metadata=request.metadata,
         )
         if not res.success:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=res.message)
+
+        client_ip = http_request.client.host if http_request.client else "127.0.0.1"
+        audit_logger.log_event(
+            event_type="SPEAKER_ENROLLED",
+            actor="authenticated_client",
+            resource_id=clean_speaker_id,
+            status="SUCCESS",
+            client_ip=client_ip,
+            details={"num_utterances": res.num_utterances, "consistency": res.intra_speaker_consistency},
+        )
         return SpeakerEnrollResponse(**res.to_dict())
     except ValueError as ve:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
 
 
 @router.post("/verify", response_model=SpeakerVerifyResponse)
-async def verify_speaker(request: SpeakerVerifyRequest):
+async def verify_speaker(request: SpeakerVerifyRequest, _auth: bool = Depends(verify_api_key)):
     """
     Evaluates candidate speech against an enrolled speaker (1:1) or all enrolled speakers (1:N).
     Returns cosine similarity, match decision, and confidence.
     """
+    claimed_id = sanitize_identifier(request.claimed_speaker_id) if request.claimed_speaker_id else None
     audio = _decode_pcm_base64(request.pcm_base64)
     if len(audio) < 4000:  # < 0.25s
         raise HTTPException(
@@ -116,16 +134,27 @@ async def verify_speaker(request: SpeakerVerifyRequest):
     verification_svc = SpeakerVerificationService()
     res = await verification_svc.verify(
         audio=audio,
-        claimed_speaker_id=request.claimed_speaker_id,
+        claimed_speaker_id=claimed_id,
     )
     return SpeakerVerifyResponse(**res.to_extended_dict())
 
 
 @router.get("/profiles", response_model=List[SpeakerProfileSummary])
-async def list_speaker_profiles():
+async def list_speaker_profiles(http_request: Request, _auth: bool = Depends(verify_api_key)):
     """Lists enrolled speaker profiles without exposing raw embedding vectors."""
     store = get_embedding_store()
     profiles = await store.list_speakers()
+
+    client_ip = http_request.client.host if http_request.client else "127.0.0.1"
+    audit_logger.log_event(
+        event_type="SPEAKER_PROFILES_ACCESSED",
+        actor="authenticated_client",
+        resource_id="all_profiles",
+        status="SUCCESS",
+        client_ip=client_ip,
+        details={"count": len(profiles)},
+    )
+
     return [
         SpeakerProfileSummary(
             speaker_id=p.speaker_id,
@@ -139,10 +168,24 @@ async def list_speaker_profiles():
 
 
 @router.delete("/profiles/{speaker_id}")
-async def delete_speaker_profile(speaker_id: str):
-    """Deletes an enrolled speaker profile."""
+async def delete_speaker_profile(speaker_id: str, http_request: Request, _auth: bool = Depends(verify_api_key)):
+    """
+    Permanently deletes an enrolled speaker profile (GDPR Right to Erasure / BIPA compliance).
+    Securely removes vector embeddings and associated metadata.
+    """
+    clean_id = sanitize_identifier(speaker_id)
     store = get_embedding_store()
-    deleted = await store.delete_speaker_profile(speaker_id.strip().lower())
+    deleted = await store.delete_speaker_profile(clean_id.lower())
     if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Speaker '{speaker_id}' not found.")
-    return {"status": "success", "message": f"Speaker profile '{speaker_id}' deleted."}
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Speaker '{clean_id}' not found.")
+
+    client_ip = http_request.client.host if http_request.client else "127.0.0.1"
+    audit_logger.log_event(
+        event_type="SPEAKER_DELETED",
+        actor="authenticated_client",
+        resource_id=clean_id,
+        status="SUCCESS",
+        client_ip=client_ip,
+        details={"action": "permanent_biometric_purge"},
+    )
+    return {"status": "success", "message": f"Speaker profile '{clean_id}' permanently deleted."}

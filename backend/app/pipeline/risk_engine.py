@@ -32,7 +32,7 @@ class RiskEngineInput:
     acoustic liveness analysis, telephony metadata, audio quality, contextual signals,
     and historical signals.
     """
-    deepfake_probability: float
+    deepfake_probability: Optional[float] = None
     speaker_similarity: Optional[float] = None
     liveness_score: float = 1.0  # 1.0 = live vocal tract acoustic emission, 0.0 = loudspeaker replay
     replay_probability: Optional[float] = None  # 0.0 to 1.0
@@ -44,9 +44,12 @@ class RiskEngineInput:
     historical_signals: List[str] = field(default_factory=list)  # e.g. ["PREVIOUS_CHALLENGE_FAILED"]
     caller_id: Optional[str] = None
     session_id: Optional[str] = None
+    claimed_speaker_id: Optional[str] = None
+    deepfake_model_available: bool = True
+    speaker_model_available: bool = True
 
     @property
-    def deepfake_score(self) -> float:
+    def deepfake_score(self) -> Optional[float]:
         return self.deepfake_probability
 
     @property
@@ -165,7 +168,6 @@ class MultiFactorRiskEngine:
 
         total_points = 0.0
 
-        p_df = max(0.0, min(1.0, float(risk_input.deepfake_probability)))
         sim = float(risk_input.speaker_similarity) if risk_input.speaker_similarity is not None else None
         liveness = max(0.0, min(1.0, float(risk_input.liveness_score)))
         caller_verified = bool(risk_input.caller_verified)
@@ -173,23 +175,30 @@ class MultiFactorRiskEngine:
         conf = max(0.0, min(1.0, float(risk_input.model_confidence)))
         context_signals = [str(s).strip().upper() for s in (risk_input.contextual_signals or [])]
 
-        # 1. Deepfake Probability Scoring
-        if p_df >= 0.85:
-            # High synthetic threat: adds 45 - 60 points
-            df_pts = 45.0 + 15.0 * ((p_df - 0.85) / 0.15)
-            total_points += df_pts
-            signals.append("HIGH_SYNTHETIC_PROBABILITY")
-            contrib.append(f"Synthetic speech probability: {int(round(p_df * 100))}%")
-        elif p_df >= 0.50:
-            # Moderate synthetic threat: adds 20 - 40 points
-            df_pts = 20.0 + 20.0 * ((p_df - 0.50) / 0.35)
-            total_points += df_pts
-            signals.append("MODERATE_SYNTHETIC_PROBABILITY")
-            contrib.append(f"Synthetic speech probability: {int(round(p_df * 100))}%")
+        # 1. Deepfake Probability Scoring (with graceful degradation fallback)
+        df_model_avail = getattr(risk_input, "deepfake_model_available", True)
+        if risk_input.deepfake_probability is not None and df_model_avail:
+            p_df = max(0.0, min(1.0, float(risk_input.deepfake_probability)))
+            if p_df >= 0.85:
+                # High synthetic threat: adds 45 - 60 points
+                df_pts = 45.0 + 15.0 * ((p_df - 0.85) / 0.15)
+                total_points += df_pts
+                signals.append("HIGH_SYNTHETIC_PROBABILITY")
+                contrib.append(f"Synthetic speech probability: {int(round(p_df * 100))}%")
+            elif p_df >= 0.50:
+                # Moderate synthetic threat: adds 20 - 40 points
+                df_pts = 20.0 + 20.0 * ((p_df - 0.50) / 0.35)
+                total_points += df_pts
+                signals.append("MODERATE_SYNTHETIC_PROBABILITY")
+                contrib.append(f"Synthetic speech probability: {int(round(p_df * 100))}%")
+            else:
+                # Minor or clean
+                df_pts = 15.0 * (p_df / 0.50)
+                total_points += df_pts
         else:
-            # Minor or clean
-            df_pts = 15.0 * (p_df / 0.50)
-            total_points += df_pts
+            p_df = None
+            signals.append("DEEPFAKE_MODEL_UNAVAILABLE")
+            contrib.append("Deepfake detector unavailable - operating in degraded mode with remaining signals")
 
         # 2. Acoustic Liveness (Replay Attack) Scoring
         if liveness < 0.50:
@@ -208,7 +217,14 @@ class MultiFactorRiskEngine:
             contrib.append("Caller verification failed")
 
         # 4. Speaker Verification & Targeted Clone Attack Synergy
-        if sim is not None:
+        spk_model_avail = getattr(risk_input, "speaker_model_available", True)
+        claimed_spk = getattr(risk_input, "claimed_speaker_id", None)
+
+        if not spk_model_avail and claimed_spk:
+            signals.append("SPEAKER_MODEL_UNAVAILABLE")
+            signals.append("SPEAKER_IDENTITY_UNVERIFIED")
+            contrib.append("Speaker model unavailable - claimed identity NOT verified")
+        elif sim is not None:
             if sim < 0.85:
                 # Discrepancy with claimed identity
                 mismatch_ratio = 1.0 - max(0.0, sim)
@@ -220,10 +236,13 @@ class MultiFactorRiskEngine:
 
             # TARGETED CLONE DETECTION:
             # Attacker cloning an enrolled victim has HIGH similarity (>= 0.85) AND HIGH synthetic probability (>= 0.85).
-            if sim >= 0.85 and p_df >= 0.85:
+            if p_df is not None and sim >= 0.85 and p_df >= 0.85:
                 total_points += 40.0  # Non-linear synergy penalty
                 signals.append("TARGETED_CLONE_DETECTED")
                 contrib.append("Targeted voice clone detected (matching enrolled voiceprint with synthetic speech)")
+        elif claimed_spk:
+            signals.append("SPEAKER_IDENTITY_UNVERIFIED")
+            contrib.append(f"Identity '{claimed_spk}' unverified (speaker model returned no similarity)")
 
         # 5. Audio Quality / SNR / Clipping
         if audio_qual < 0.40:
@@ -251,12 +270,12 @@ class MultiFactorRiskEngine:
                 high_risk_credential_or_financial = True
                 if ctx not in signals:
                     signals.append(ctx)
-                    contrib.append(f"Severe social engineering threat ({ctx})")
-            elif ctx == "UPI_REQUEST":
+                    contrib.append(f"Critical emergency coercion / takeover intent ({ctx})")
+            elif ctx in ["UPI_REQUEST"]:
                 total_points += 15.0
                 high_risk_credential_or_financial = True
-                if "UPI_REQUEST" not in signals:
-                    signals.append("UPI_REQUEST")
+                if ctx not in signals:
+                    signals.append(ctx)
                     contrib.append("Direct UPI / VPA payment solicitation detected")
             elif ctx in ["IDENTITY_VERIFICATION_REQUEST", "CONFIDENTIAL_INFO_REQUEST"]:
                 total_points += 15.0
@@ -270,7 +289,7 @@ class MultiFactorRiskEngine:
                     contrib.append(f"Contextual alert: {ctx}")
 
         # Compounding synergy: Voice clone + Credential/Emergency money solicitation = Escalated Threat
-        if high_risk_credential_or_financial and p_df >= 0.70:
+        if high_risk_credential_or_financial and p_df is not None and p_df >= 0.70:
             total_points += 25.0
             if "VOICE_CLONE_SOCIAL_ENGINEERING_SYNERGY" not in signals:
                 signals.append("VOICE_CLONE_SOCIAL_ENGINEERING_SYNERGY")
@@ -305,6 +324,11 @@ class MultiFactorRiskEngine:
             action = "CHALLENGE"
             risk_level = "MEDIUM"
 
+        # Unverified speaker override: Never pretend identity was verified
+        if ("SPEAKER_IDENTITY_UNVERIFIED" in signals or "SPEAKER_MODEL_UNAVAILABLE" in signals) and action == "ALLOW":
+            action = "CHALLENGE"
+            risk_level = "MEDIUM"
+
         # Replay attack policy override: Never blindly allow severe replay attacks
         if "LOW_LIVENESS" in signals and liveness < 0.30 and action == "ALLOW":
             action = "CHALLENGE"
@@ -320,8 +344,10 @@ class MultiFactorRiskEngine:
                 action = "CHALLENGE"
 
         individual_scores = {
-            "deepfake_score": round(p_df, 3),
+            "deepfake_score": round(p_df, 3) if p_df is not None else None,
+            "deepfake_model_available": p_df is not None,
             "speaker_similarity": round(sim, 3) if sim is not None else None,
+            "speaker_model_available": spk_model_avail,
             "liveness_score": round(liveness, 3),
             "replay_probability": round(risk_input.replay_probability if risk_input.replay_probability is not None else (1.0 - liveness), 3),
             "caller_verification_status": caller_verified,
@@ -329,7 +355,7 @@ class MultiFactorRiskEngine:
             "model_confidence": round(conf, 3),
             "audio_quality": round(audio_qual, 3),
         }
-        requires_human = is_low_confidence or (liveness >= 0.90 and 0.50 <= p_df < 0.85)
+        requires_human = is_low_confidence or (p_df is not None and liveness >= 0.90 and 0.50 <= p_df < 0.85) or (p_df is None)
 
         result = RiskEvaluationResult(
             risk_score=risk_score,

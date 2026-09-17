@@ -233,8 +233,11 @@ function updateTelemetryUI(d, windowsCount) {
         spkMatchBadge.textContent = "UNKNOWN";
       }
     }
+  }
+
   // Update Phase 6 Multi-Signal Risk Engine Widget
   if (d.risk) {
+
     const risk = d.risk;
     const score = risk.risk_score || 0;
     const level = risk.risk_level || "LOW";

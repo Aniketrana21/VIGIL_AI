@@ -1,3 +1,4 @@
+import time
 from dataclasses import dataclass
 from typing import Optional, Tuple, Union
 import numpy as np
@@ -22,6 +23,7 @@ class AudioChunkValidator:
     def __init__(self, expected_sample_rate: int = 16000, max_chunk_duration_ms: float = 1000.0):
         self.expected_sample_rate = expected_sample_rate
         self.max_chunk_duration_ms = max_chunk_duration_ms
+        self._raw_sequence_counter = 0
 
     def validate_raw(self, raw_input: Union[bytes, str, dict]) -> ValidationResult:
         """
@@ -41,9 +43,11 @@ class AudioChunkValidator:
                     return ValidationResult(is_valid=False, error_message="Corrupted binary header or bad magic")
                 elif len(raw_input) >= 320 and len(raw_input) % 2 == 0:
                     # Valid raw PCM: at least 10ms (160 samples = 320 bytes) and 16-bit aligned
+                    seq = self._raw_sequence_counter
+                    self._raw_sequence_counter += 1
                     chunk = AudioChunk(
-                        sequence_id=0,
-                        timestamp_ms=0,
+                        sequence_id=seq,
+                        timestamp_ms=int(time.time() * 1000),
                         sample_rate=self.expected_sample_rate,
                         channels=1,
                         pcm_bytes=raw_input,

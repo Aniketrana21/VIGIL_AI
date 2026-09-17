@@ -1,0 +1,198 @@
+{
+  "generated_at": "2026-09-17T05:28:49Z",
+  "datasets": {
+    "ASVspoof 5": {
+      "dataset_name": "ASVspoof 5",
+      "total_trials": 400,
+      "bonafide_count": 81,
+      "spoof_count": 319,
+      "eer_percent": 0.0,
+      "threshold_at_eer": 0.596,
+      "roc_auc": 1.0,
+      "precision": 100.0,
+      "recall": 100.0,
+      "f1_score": 100.0,
+      "far": 0.0,
+      "frr": 0.0,
+      "confusion_matrix": [
+        [
+          81,
+          0
+        ],
+        [
+          0,
+          319
+        ]
+      ],
+      "latency_mean_ms": 9.37,
+      "latency_p95_ms": 11.57,
+      "latency_p99_ms": 14.88,
+      "real_time_factor": 0.0047,
+      "attack_breakdown": {
+        "A01": 100.0,
+        "A02": 100.0,
+        "A03": 100.0,
+        "A04": 100.0,
+        "A05": 100.0,
+        "A06": 100.0,
+        "A07": 100.0,
+        "A08": 100.0,
+        "A09": 100.0,
+        "A10": 100.0,
+        "A11": 100.0,
+        "A12": 100.0,
+        "A13": 100.0,
+        "A14": 100.0,
+        "A15": 100.0,
+        "A16": 100.0,
+        "A17": 100.0,
+        "A18": 100.0,
+        "A19": 100.0,
+        "A20": 100.0,
+        "A21": 100.0,
+        "A22": 100.0,
+        "A23": 100.0,
+        "A24": 100.0,
+        "A25": 100.0,
+        "A26": 100.0,
+        "A27": 100.0,
+        "A28": 100.0,
+        "A29": 100.0,
+        "A30": 100.0,
+        "A31": 100.0,
+        "A32": 100.0
+      }
+    },
+    "ASVspoof 2021": {
+      "dataset_name": "ASVspoof 2021",
+      "total_trials": 300,
+      "bonafide_count": 100,
+      "spoof_count": 200,
+      "eer_percent": 0.0,
+      "threshold_at_eer": 0.5915,
+      "roc_auc": 1.0,
+      "precision": 100.0,
+      "recall": 100.0,
+      "f1_score": 100.0,
+      "far": 0.0,
+      "frr": 0.0,
+      "confusion_matrix": [
+        [
+          100,
+          0
+        ],
+        [
+          0,
+          200
+        ]
+      ],
+      "latency_mean_ms": 9.03,
+      "latency_p95_ms": 11.16,
+      "latency_p99_ms": 12.61,
+      "real_time_factor": 0.0045,
+      "attack_breakdown": {
+        "DF_attack_0": 100.0,
+        "DF_attack_1": 100.0,
+        "DF_attack_2": 100.0,
+        "DF_attack_3": 100.0,
+        "DF_attack_4": 100.0,
+        "DF_attack_5": 100.0,
+        "DF_attack_6": 100.0,
+        "DF_attack_7": 100.0
+      }
+    },
+    "In-the-Wild": {
+      "dataset_name": "In-the-Wild",
+      "total_trials": 300,
+      "bonafide_count": 150,
+      "spoof_count": 150,
+      "eer_percent": 0.0,
+      "threshold_at_eer": 0.5915,
+      "roc_auc": 1.0,
+      "precision": 100.0,
+      "recall": 100.0,
+      "f1_score": 100.0,
+      "far": 0.0,
+      "frr": 0.0,
+      "confusion_matrix": [
+        [
+          150,
+          0
+        ],
+        [
+          0,
+          150
+        ]
+      ],
+      "latency_mean_ms": 8.98,
+      "latency_p95_ms": 10.24,
+      "latency_p99_ms": 11.5,
+      "real_time_factor": 0.0045,
+      "attack_breakdown": {
+        "bonafide_in_the_wild": 0.0,
+        "unconstrained_deepfake": 100.0
+      }
+    },
+    "IndianLangVoice": {
+      "dataset_name": "IndianLangVoice",
+      "total_trials": 300,
+      "bonafide_count": 150,
+      "spoof_count": 150,
+      "eer_percent": 17.33,
+      "threshold_at_eer": 0.588,
+      "roc_auc": 0.7533,
+      "precision": 88.28,
+      "recall": 75.33,
+      "f1_score": 81.29,
+      "far": 10.0,
+      "frr": 24.67,
+      "confusion_matrix": [
+        [
+          135,
+          15
+        ],
+        [
+          37,
+          113
+        ]
+      ],
+      "latency_mean_ms": 9.23,
+      "latency_p95_ms": 11.74,
+      "latency_p99_ms": 20.03,
+      "real_time_factor": 0.0046,
+      "attack_breakdown": {
+        "bonafide_vernacular": 10.0,
+        "cross_lingual_vc": 100.0,
+        "indic_tts_vits": 100.0,
+        "telephony_indic_replay": 0.0,
+        "whatsapp_indic_clone": 100.0
+      }
+    }
+  },
+  "known_vs_unseen_generalization": {
+    "known_attacks_eer": 0.0,
+    "known_attacks_auc": 1.0,
+    "unseen_attacks_eer": 11.0,
+    "unseen_attacks_auc": 0.9193,
+    "generalization_gap_eer": 11.0,
+    "held_out_attack_families": [
+      "A28",
+      "A29",
+      "A30",
+      "A31",
+      "A32",
+      "diffusion_tts_matcha",
+      "zero_shot_neural_vc",
+      "whatsapp_indic_clone",
+      "physical_loudspeaker_replay",
+      "partial_splice_manipulation"
+    ]
+  },
+  "snr_noise_stress": {
+    "25.0dB": 0.0,
+    "15.0dB": 0.0,
+    "10.0dB": 0.0,
+    "5.0dB": 0.0,
+    "0.0dB": 0.0
+  }
+}

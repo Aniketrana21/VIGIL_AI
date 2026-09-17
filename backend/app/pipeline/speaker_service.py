@@ -195,6 +195,17 @@ class SpeakerVerificationService:
         self.match_threshold = match_threshold if match_threshold is not None else getattr(settings, "SPEAKER_MATCH_THRESHOLD", 0.75)
         self.unknown_threshold = unknown_threshold if unknown_threshold is not None else getattr(settings, "SPEAKER_UNKNOWN_THRESHOLD", 0.60)
 
+    def get_model_info(self) -> Dict[str, Any]:
+        """Returns speaker model version, status, and dimensions."""
+        if hasattr(self.encoder, "get_model_info"):
+            return self.encoder.get_model_info()
+        return {
+            "name": "ECAPA-TDNN Speaker Verifier",
+            "version": "Vigil-ECAPA-TDNN-v1.0",
+            "status": "READY",
+            "embedding_dim": getattr(self.encoder, "embedding_dim", 192),
+        }
+
     def _calibrate_confidence(self, similarity: float, threshold: float) -> float:
         """
         Calibrates margin-based verification confidence using a sigmoid transfer function:

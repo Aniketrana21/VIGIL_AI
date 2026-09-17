@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.api.v1.endpoints import challenge, conversation, enroll, health, screening, stream, stream_ingest
+from app.api.v1.endpoints import challenge, conversation, demo, enroll, health, screening, stream, stream_ingest
 from app.core.config import settings
 from app.core.logging import logger
 
@@ -60,10 +60,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+from app.core.rate_limiter import SecurityHeadersMiddleware
+
+# Security Headers & Rate Limiting Middleware
+app.add_middleware(
+    SecurityHeadersMiddleware,
+    max_requests_per_minute=settings.RATE_LIMIT_PER_MINUTE,
+)
+
 # CORS Configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust to specific frontend domains in production
+    allow_origins=["*"],  # Restrict to specific trusted domains in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -92,6 +100,7 @@ from app.api import speaker
 
 # Register API v1 routes
 app.include_router(health.router, prefix="/api/v1/health", tags=["Health"])
+app.include_router(health.router, prefix="/health", include_in_schema=False)
 app.include_router(screening.router, prefix="/api/v1/screening", tags=["Android Screening"])
 app.include_router(enroll.router, prefix="/api/v1/enrollment", tags=["Biometric Enrollment"])
 app.include_router(challenge.router, prefix="/api/v1/challenge", tags=["Challenge-Response"])
@@ -99,6 +108,12 @@ app.include_router(conversation.router, prefix="/api/v1/conversation", tags=["Co
 app.include_router(speaker.router)
 app.include_router(stream.router, prefix="/api/v1/stream", tags=["Streaming WebSocket"])
 app.include_router(stream_ingest.router, prefix="/api/v1/stream", tags=["Audio Ingestion"])
+app.include_router(demo.router, prefix="/api/v1/demo", tags=["SIH Demo"])
+
+@app.get("/ready", include_in_schema=False)
+async def root_ready():
+    return await health.readiness_probe()
+
 
 # Mount static files for web dashboard
 static_dir = Path(__file__).parent / "static"

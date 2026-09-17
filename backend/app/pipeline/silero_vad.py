@@ -57,17 +57,17 @@ class SileroModelRegistry:
 
 
 class SileroStreamingVAD(VADInterface):
-    """
-    Production-quality streaming Voice Activity Detection using Silero VAD.
-    
-    Features:
-    - Shared neural weights: Does NOT reload model per chunk.
-    - Thread-safe streaming state per session (recurrent state + context tensor).
-    - Configurable speech threshold, min speech duration, min silence duration, and context padding.
-    - High-precision latency tracking (p50, p95, current latency).
-    - Robust handling of silence, stationary background noise, and music.
-    - Strict output schema: {is_speech, speech_probability, start_time, end_time}.
-    """
+    MODEL_NAME = "Silero Streaming VAD"
+    MODEL_VERSION = "Silero-VAD-v4.0"
+
+    def get_model_info(self) -> Dict[str, Any]:
+        return {
+            "name": self.MODEL_NAME,
+            "version": self.MODEL_VERSION,
+            "status": "READY",
+            "sample_rate": self.sample_rate,
+            "speech_threshold": self.speech_threshold,
+        }
 
     def __init__(
         self,

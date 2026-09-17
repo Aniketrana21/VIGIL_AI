@@ -211,6 +211,16 @@ class LivenessAnalyzer(BaseAudioProcessor):
     Liveness detection estimates whether audio originates from a live acoustic interaction
     rather than replayed or synthetic audio. It does NOT prove that a human is present.
     """
+    MODEL_NAME = "Acoustic Multi-Band Liveness & Replay Detector"
+    MODEL_VERSION = "Vigil-AcousticLiveness-v1.0"
+
+    def get_model_info(self) -> Dict[str, Any]:
+        return {
+            "name": self.MODEL_NAME,
+            "version": self.MODEL_VERSION,
+            "status": "READY",
+            "sample_rate": self.sample_rate,
+        }
 
     def __init__(self, sample_rate: int = 16000):
         self.sample_rate = sample_rate

@@ -32,7 +32,15 @@ class Settings(BaseSettings):
         default="vigil-ai-hackathon-demo-key-2026",
         description="API key for REST authentication"
     )
+    BIOMETRIC_ENCRYPTION_KEY: str = Field(
+        default="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        description="32-byte hex key for AES-256-GCM encryption of biometric embeddings at rest."
+    )
     ALLOW_ANONYMOUS_DEV: bool = True
+    WS_AUTH_REQUIRED: bool = False
+    RATE_LIMIT_PER_MINUTE: int = 120
+    MAX_AUDIO_PAYLOAD_BYTES: int = 10 * 1024 * 1024  # 10 MB limit
+    AUDIT_LOG_FILE: str = "reports/security_audit.log"
 
     # Audio Pipeline Specification
     SAMPLE_RATE: int = 16000
@@ -84,10 +92,16 @@ class Settings(BaseSettings):
     MAX_LATENCY_BUDGET_MS: float = 150.0
     DROP_POLICY: str = "drop_oldest"  # "drop_oldest" | "drop_newest" | "block"
 
-    # External stores (Optional for standalone demo / development)
+    # External stores & services (Optional for standalone demo / development)
     DATABASE_URL: Optional[str] = "sqlite+aiosqlite:///./vigil_dev.db"
     POSTGRES_VECTOR_URL: Optional[str] = "postgresql+asyncpg://vigil:vigil_secret@localhost:5432/vigil_ai"
     REDIS_URL: Optional[str] = "redis://localhost:6379/0"
+    MODEL_SERVICE_URL: Optional[str] = None  # URL for dedicated model microservice (e.g. http://model-service:8001)
+
+    # Phase 16: Model Version & Policy Defaults
+    POLICY_VERSION: str = "2026.09.1-production"
+    WHISPER_MODEL_SIZE: str = "base"
+    VAD_MODEL_CHECKPOINT: Optional[str] = None
 
     @property
     def window_samples(self) -> int:
@@ -105,6 +119,15 @@ class Settings(BaseSettings):
         if v_clean not in valid_envs:
             raise ValueError(f"ENVIRONMENT must be one of {valid_envs}")
         return v_clean
+
+    @classmethod
+    def check_production_keys(cls, env: str, jwt_key: str, api_key: str) -> None:
+        """Utility for validating production keys."""
+        if env == "production":
+            if "change-this" in jwt_key.lower():
+                raise ValueError("Production security violation: JWT_SECRET_KEY must be configured with a secure non-default secret.")
+            if "demo-key" in api_key.lower():
+                raise ValueError("Production security violation: API_KEY must be configured with a secure non-default secret.")
 
 
 settings = Settings()

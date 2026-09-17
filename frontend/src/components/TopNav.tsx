@@ -76,12 +76,24 @@ export const TopNav: React.FC<TopNavProps> = ({
             ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.25)]'
             : connectionStatus === 'CONNECTING'
             ? 'bg-amber-950/40 border-amber-500/50 text-amber-300'
-            : 'bg-rose-950/40 border-rose-500/50 text-rose-300'
+            : 'bg-rose-950/40 border-rose-500/50 text-rose-300 shadow-[0_0_10px_rgba(244,63,94,0.3)]'
         }`}>
           <Radio className={`w-3 h-3 ${connectionStatus === 'CONNECTED' ? 'text-emerald-400 animate-pulse' : 'text-slate-400'}`} />
           <span className="font-semibold text-[11px] tracking-wider">{connectionStatus}</span>
         </div>
       </div>
+
+      {/* Network Degradation Banner */}
+      {connectionStatus === 'DISCONNECTED' && (
+        <div className="w-full bg-amber-950/80 border-t border-amber-600/60 px-6 py-2 flex items-center justify-between text-xs font-mono text-amber-300 animate-pulse">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+            <strong>⚠️ NETWORK DEGRADED / OFFLINE</strong>
+            <span className="text-amber-400/80 hidden sm:inline">— Real-time telemetry interrupted. Running in local fallback buffer mode.</span>
+          </div>
+          <span className="text-[10px] text-amber-400 uppercase tracking-widest">RECONNECTING...</span>
+        </div>
+      )}
     </header>
   );
 };

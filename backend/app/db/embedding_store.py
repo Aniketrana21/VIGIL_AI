@@ -17,11 +17,15 @@ except ImportError:
     PGVECTOR_AVAILABLE = False
 
 
+from app.core.security import decrypt_biometric_embedding, encrypt_biometric_embedding
+
+
 @dataclass
 class SpeakerProfile:
     """
     Persisted speaker profile containing mathematical vector embeddings and metadata.
     NEVER stores raw voice recordings or PCM bytes (GDPR / privacy safe).
+    Protected at rest with AES-256-GCM authenticated encryption.
     """
     speaker_id: str
     name: str
@@ -29,8 +33,10 @@ class SpeakerProfile:
     num_utterances: int
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     metadata: Dict[str, Any] = field(default_factory=dict)
+    encrypted_payload: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
+        """Public summary: never exposes raw or encrypted embedding vectors."""
         return {
             "speaker_id": self.speaker_id,
             "name": self.name,
@@ -42,6 +48,33 @@ class SpeakerProfile:
 
     def get_embedding_numpy(self) -> np.ndarray:
         return np.asarray(self.embedding, dtype=np.float32)
+
+    def to_encrypted_storage_record(self) -> Dict[str, Any]:
+        """Produces an encrypted record protected with AES-256-GCM for persistent storage."""
+        enc_payload = self.encrypted_payload or encrypt_biometric_embedding(self.embedding)
+        return {
+            "speaker_id": self.speaker_id,
+            "name": self.name,
+            "encrypted_embedding": enc_payload,
+            "num_utterances": self.num_utterances,
+            "created_at": self.created_at,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_encrypted_storage_record(cls, record: Dict[str, Any]) -> "SpeakerProfile":
+        """Reconstructs SpeakerProfile from AES-256-GCM ciphertext."""
+        enc_payload = record["encrypted_embedding"]
+        emb = decrypt_biometric_embedding(enc_payload)
+        return cls(
+            speaker_id=record["speaker_id"],
+            name=record["name"],
+            embedding=emb,
+            num_utterances=record["num_utterances"],
+            created_at=record.get("created_at", datetime.now(timezone.utc).isoformat()),
+            metadata=record.get("metadata", {}),
+            encrypted_payload=enc_payload,
+        )
 
 
 class EmbeddingStore(ABC):

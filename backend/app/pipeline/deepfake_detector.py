@@ -168,7 +168,19 @@ class WavLMAASISTDetector(DeepfakeDetector):
     Implements normalization, fixed input length, silence guards, batching,
     GPU/CPU fallback, warm-up, and calibrated uncertainty.
     """
+    MODEL_NAME = "WavLM-AASIST Voice Clone Detector"
     MODEL_VERSION = "Vigil-WavLM-AASIST-v1.0"
+
+    def get_model_info(self) -> Dict[str, Any]:
+        return {
+            "name": self.MODEL_NAME,
+            "version": self.MODEL_VERSION,
+            "status": "READY",
+            "device": getattr(self, "device", "cpu"),
+            "checkpoint_loaded": getattr(self, "checkpoint_loaded", False),
+            "input_length_samples": self.input_length_samples,
+            "target_sample_rate": self.target_sample_rate,
+        }
 
     def __init__(
         self,
@@ -437,6 +449,18 @@ class DeepfakeModelRegistry:
         """Allows swapping detector implementation for testing or customized models."""
         with cls._instance_lock:
             cls._detector = detector
+
+    @classmethod
+    def get_model_info(cls) -> Dict[str, Any]:
+        """Returns readiness status and version metadata."""
+        detector = cls.get_detector()
+        if hasattr(detector, "get_model_info"):
+            return detector.get_model_info()
+        return {
+            "name": "WavLM-AASIST Voice Clone Detector",
+            "version": getattr(detector, "MODEL_VERSION", "Vigil-WavLM-AASIST-v1.0"),
+            "status": "READY",
+        }
 
 
 if __name__ == "__main__":

@@ -24,6 +24,7 @@ VIGIL-AI is a modular, defense-in-depth, real-time voice cloning and synthetic s
 
 Comprehensive technical documentation is organized in the [`docs/`](./docs) directory:
 
+0. [**Complete Setup & Deployment Guide**](./docs/SETUP.md): End-to-end setup runbook, Docker Compose (5 services), configuration, health probes, and fail-safe degradation.
 1. [**Master Architecture Document**](./docs/architecture.md): End-to-end system design, component breakdown, latency budgets, and data-flow diagrams.
 2. [**Android Telephony & Platform Limitations**](./docs/android_telephony_spec.md): In-depth breakdown of Android OS sandbox restrictions, `CallScreeningService` implementation, and loudspeaker acoustic analysis.
 3. [**API & Streaming Protocol Specification**](./docs/api_contract.md): REST API endpoints and real-time WebSocket protocol contracts (handshake, binary streaming, risk verdicts, error envelopes).

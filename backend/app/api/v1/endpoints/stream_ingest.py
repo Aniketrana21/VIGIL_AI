@@ -1,8 +1,10 @@
 import asyncio
 import json
+from typing import Optional
 import uuid
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
 from app.core.logging import logger
+from app.core.security import sanitize_identifier
 from app.pipeline.async_pipeline import AsyncInferencePipeline
 from app.pipeline.session_manager import StreamingSessionManager
 
@@ -10,7 +12,10 @@ router = APIRouter()
 
 
 @router.websocket("/ingest")
-async def websocket_audio_ingest(websocket: WebSocket):
+async def websocket_audio_ingest(
+    websocket: WebSocket,
+    session_id: Optional[str] = Query(None),
+):
     """
     Phase 7 Real-Time Streaming Audio Ingestion Endpoint.
     Non-blocking async producer-consumer pipeline:
@@ -21,15 +26,22 @@ async def websocket_audio_ingest(websocket: WebSocket):
     """
     await websocket.accept()
 
-    session_id = str(uuid.uuid4())
-    logger.info(f"Audio ingestion stream started: session {session_id}")
+    if session_id:
+        try:
+            clean_session_id = sanitize_identifier(session_id)
+        except Exception:
+            clean_session_id = str(uuid.uuid4())
+    else:
+        clean_session_id = str(uuid.uuid4())
+
+    logger.info(f"Audio ingestion stream started: session {clean_session_id}")
 
     # Create async pipeline for binary streaming
-    pipeline = AsyncInferencePipeline(session_id=session_id, sample_rate=16000, window_seconds=2.0)
+    pipeline = AsyncInferencePipeline(session_id=clean_session_id, sample_rate=16000, window_seconds=2.0)
     await pipeline.start()
 
     # Fallback synchronous session for text/JSON control messages
-    sync_session = StreamingSessionManager(session_id=session_id, sample_rate=16000, window_seconds=2.0)
+    sync_session = StreamingSessionManager(session_id=clean_session_id, sample_rate=16000, window_seconds=2.0)
 
     # Background task: drain telemetry from pipeline and send to WebSocket
     async def telemetry_streamer():

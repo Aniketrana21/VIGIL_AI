@@ -47,4 +47,31 @@ export interface SecurityTelemetry {
     expires_in_sec: number;
     status: 'PENDING' | 'PASSED' | 'FAILED';
   } | null;
+
+  // SIH Demo Mode Additions
+  demo_mode?: boolean;
+  demo_scenario_id?: number;
+  defense_stage?: 'DETECT' | 'VERIFY' | 'UNDERSTAND' | 'CHALLENGE' | 'PREVENT' | 'ALLOW';
+  audio_chunks_processed?: number;
+  waveform_sample?: number[];
+  explanation?: string;
 }
+
+export interface SIHScenarioMeta {
+  id: number;
+  key: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  defense_stage: 'DETECT' | 'VERIFY' | 'UNDERSTAND' | 'CHALLENGE' | 'PREVENT' | 'ALLOW';
+  expected_outcome: string;
+  expected_risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  expected_action: 'ALLOW' | 'MONITOR' | 'CHALLENGE' | 'WARN' | 'BLOCK';
+  expected_deepfake: string;
+  expected_liveness: string;
+  expected_speaker: string;
+  expected_intent: string;
+  conversation_transcript: string;
+  consent_label: string;
+}
+

@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import torch
 
+from app.core.config import settings
 from app.core.logging import logger
 from app.core.security import secure_zero_memory
 from app.pipeline.interfaces import ConversationIntelligenceResult
@@ -62,6 +63,17 @@ class ConversationIntelligenceClassifier:
         r"\b(hospital|police|accident|jail|arrest|emergency|life or death|kidnap)\b",
         r"\b(account (is|will be) (blocked|suspended|frozen|locked|terminated))\b",
     ]
+
+    MODEL_NAME = "Whisper Contextual Intent Classifier"
+    MODEL_VERSION = "OpenAI-Whisper-Base-v1.0"
+
+    def get_model_info(self) -> Dict[str, Any]:
+        return {
+            "name": self.MODEL_NAME,
+            "version": self.MODEL_VERSION,
+            "status": "READY",
+            "model_size": getattr(settings, "WHISPER_MODEL_SIZE", "base"),
+        }
 
     def __init__(self, transcriber: Optional[WhisperTranscriber] = None):
         self.transcriber = transcriber or get_transcriber()
@@ -314,3 +326,8 @@ def get_conversation_classifier() -> ConversationIntelligenceClassifier:
     if _conversation_classifier_instance is None:
         _conversation_classifier_instance = ConversationIntelligenceClassifier()
     return _conversation_classifier_instance
+
+
+# Backward-compatible alias
+ContextualConversationClassifier = ConversationIntelligenceClassifier
+

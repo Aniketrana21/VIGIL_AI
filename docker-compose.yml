@@ -1,6 +1,7 @@
 version: "3.8"
 
 services:
+  # 1. Main Backend API & Orchestration Server
   backend:
     build:
       context: ./backend
@@ -15,12 +16,18 @@ services:
       - PORT=8000
       - JWT_SECRET_KEY=production-secret-key-32-chars-long-min
       - API_KEY=vigil-ai-hackathon-demo-key-2026
+      - BIOMETRIC_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       - DATABASE_URL=postgresql+asyncpg://vigil:vigil_secret@postgres:5432/vigil_ai
+      - POSTGRES_VECTOR_URL=postgresql+asyncpg://vigil:vigil_secret@postgres:5432/vigil_ai
       - REDIS_URL=redis://redis:6379/0
+      - MODEL_SERVICE_URL=http://model-service:8001
+      - WS_AUTH_REQUIRED=false
     depends_on:
       - postgres
       - redis
+      - model-service
 
+  # 2. Database: PostgreSQL 16 + pgvector for Biometric Storage
   postgres:
     image: pgvector/pgvector:pg16
     container_name: vigil_postgres
@@ -34,12 +41,39 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  # 3. Redis: Session Cache & Rate Limiting
   redis:
     image: redis:7-alpine
     container_name: vigil_redis
     restart: unless-stopped
     ports:
       - "6379:6379"
+
+  # 4. Frontend: React 19 + Tailwind SOC Dashboard (Nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: vigil_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+  # 5. Dedicated ML Model Serving Microservice
+  model-service:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vigil_model_service
+    restart: unless-stopped
+    command: ["uvicorn", "app.model_service:app", "--host", "0.0.0.0", "--port", "8001"]
+    ports:
+      - "8001:8001"
+    environment:
+      - ENVIRONMENT=production
+      - INFERENCE_DEVICE=cpu
 
 volumes:
   postgres_data:

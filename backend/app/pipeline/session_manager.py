@@ -6,8 +6,12 @@ from app.core.config import settings
 from app.core.logging import logger
 from app.pipeline.audio_buffer import AudioBuffer
 from app.pipeline.deepfake_detector import DeepfakeDetector, DeepfakeModelRegistry, DetectionResult
+from app.pipeline.interfaces import LivenessResult
 from app.pipeline.liveness import AcousticLivenessDetector
 from app.pipeline.risk_engine import MultiFactorRiskEngine, RiskEngineInput, RiskEvaluationResult
+
+
+
 from app.pipeline.silero_vad import SileroStreamingVAD
 from app.pipeline.speaker_service import SpeakerVerificationResult, SpeakerVerificationService
 from app.pipeline.vad_interface import VADDecision, VADInterface
@@ -128,49 +132,71 @@ class StreamingSessionManager:
         # Requirement 1: Do not send silence segments to deepfake model
         speech_count = len([w for w in ready_windows if self.last_vad_decision.is_speech])
         self.total_speech_windows_sent += speech_count
-        self.total_silence_windows_suppressed += (len(ready_windows) - speech_count)
-
-        if ready_windows and self.last_vad_decision.is_speech:
-            # Evaluate newest active speech window with Deepfake Detector (Signal 1)
+        should_process = ready_windows and (
+            not self.filter_silence_downstream or (self.last_vad_decision and self.last_vad_decision.is_speech)
+        )
+        if should_process:
             latest_speech_window = ready_windows[-1]
-            df_res = self.deepfake_detector.predict(latest_speech_window)
-            self.last_deepfake_result = df_res
+            df_available = True
+            spk_available = True
+            df_prob = None
+            conf = 1.0
 
-            # Timecode for timeline: MM:SS
-            elapsed_sec = int(now - self.created_at)
-            time_str = f"{int(elapsed_sec // 60):02d}:{int(elapsed_sec % 60):02d}"
-
-            # Timeline label mapping: BONAFIDE | SUSPICIOUS | SPOOF | UNCERTAIN
-            if df_res.label == "spoof":
-                display_label = "SPOOF"
-            elif df_res.spoof_probability >= 0.50:
-                display_label = "SUSPICIOUS"
-            elif df_res.label == "bonafide":
-                display_label = "BONAFIDE"
-            else:
-                display_label = "UNCERTAIN"
-
-            self.deepfake_timeline.append({
-                "time": time_str,
-                "label": display_label,
-                "spoof_probability": df_res.spoof_probability,
-                "bonafide_probability": df_res.bonafide_probability,
-                "confidence": df_res.confidence,
-                "latency_ms": df_res.inference_latency_ms,
-            })
-            if len(self.deepfake_timeline) > 20:
-                self.deepfake_timeline.pop(0)
-
-            # Evaluate Speaker Verification (Signal 2 - Independent orthogonal biometric identity)
+            # 1. Evaluate newest active speech window with Deepfake Detector (Signal 1)
             try:
-                spk_res = self.speaker_verifier.verify_sync(
-                    latest_speech_window, claimed_speaker_id=self.claimed_speaker_id
-                )
-                self.last_speaker_result = spk_res
+                if self.deepfake_detector:
+                    df_res = self.deepfake_detector.predict(latest_speech_window)
+                    self.last_deepfake_result = df_res
+                    df_prob = df_res.spoof_probability
+                    conf = df_res.confidence
+
+                    # Timecode for timeline: MM:SS
+                    elapsed_sec = int(now - self.created_at)
+                    time_str = f"{int(elapsed_sec // 60):02d}:{int(elapsed_sec % 60):02d}"
+
+                    # Timeline label mapping: BONAFIDE | SUSPICIOUS | SPOOF | UNCERTAIN
+                    if df_res.label == "spoof":
+                        display_label = "SPOOF"
+                    elif df_res.spoof_probability >= 0.50:
+                        display_label = "SUSPICIOUS"
+                    elif df_res.label == "bonafide":
+                        display_label = "BONAFIDE"
+                    else:
+                        display_label = "UNCERTAIN"
+
+                    self.deepfake_timeline.append({
+                        "time": time_str,
+                        "label": display_label,
+                        "spoof_probability": df_res.spoof_probability,
+                        "bonafide_probability": df_res.bonafide_probability,
+                        "confidence": df_res.confidence,
+                        "latency_ms": df_res.inference_latency_ms,
+                    })
+                    if len(self.deepfake_timeline) > 20:
+                        self.deepfake_timeline.pop(0)
+                else:
+                    df_available = False
+            except Exception as e:
+                logger.warning(f"Deepfake detector unavailable in session {self.session_id}: {e}")
+                df_available = False
+
+            # 2. Evaluate Speaker Verification (Signal 2 - Independent orthogonal biometric identity)
+            spk_sim = None
+            try:
+                if self.speaker_verifier:
+                    spk_res = self.speaker_verifier.verify_sync(
+                        latest_speech_window, claimed_speaker_id=self.claimed_speaker_id
+                    )
+                    self.last_speaker_result = spk_res
+                    if spk_res and (getattr(spk_res, "speaker_id", None) or getattr(spk_res, "claimed_speaker_id", None)):
+                        spk_sim = spk_res.similarity
+                else:
+                    spk_available = False
             except Exception as e:
                 logger.warning(f"Speaker verification error in session {self.session_id}: {e}")
+                spk_available = False
 
-            # Evaluate Acoustic Liveness (Signal 3 - Physical vocal emission vs replay)
+            # 3. Evaluate Acoustic Liveness (Signal 3 - Physical vocal emission vs replay)
             try:
                 window_tensor = torch.from_numpy(latest_speech_window).unsqueeze(0).float()
                 liveness_res = self.liveness_detector.evaluate(window_tensor)
@@ -180,26 +206,55 @@ class StreamingSessionManager:
                 logger.warning(f"Liveness evaluation error in session {self.session_id}: {e}")
                 liveness_score = 1.0
 
-            # Evaluate Multi-Signal Risk Engine (Phase 6 - Non-linear synthesis)
+            # 4. Evaluate Multi-Signal Risk Engine (Phase 6 - Non-linear synthesis with graceful degradation)
             try:
-                spk_sim = None
-                if self.last_speaker_result and self.last_speaker_result.claimed_speaker_id:
-                    spk_sim = self.last_speaker_result.similarity
-
                 audio_qual = 1.0
                 if self.last_vad_decision:
                     audio_qual = min(1.0, max(0.2, (self.last_vad_decision.rms_db + 60.0) / 60.0))
 
                 risk_input = RiskEngineInput(
-                    deepfake_probability=df_res.spoof_probability,
+                    deepfake_probability=df_prob,
                     speaker_similarity=spk_sim,
                     liveness_score=liveness_score,
                     caller_verified=True,
                     audio_quality=round(audio_qual, 3),
-                    model_confidence=df_res.confidence,
+                    model_confidence=conf if df_available else 0.50,
                     contextual_signals=[],
+                    claimed_speaker_id=self.claimed_speaker_id,
+                    deepfake_model_available=df_available,
+                    speaker_model_available=spk_available,
+                    session_id=self.session_id,
                 )
                 self.last_risk_result = self.risk_engine.evaluate_risk(risk_input)
+
+                # Persist detection event into PostgreSQL / SQLite database
+                try:
+                    from app.db.detection_store import DetectionEvent, record_detection_event
+                    replay_prob = self.last_liveness_result.replay_probability if self.last_liveness_result else round(1.0 - liveness_score, 3)
+                    df_lbl = self.last_deepfake_result.label if self.last_deepfake_result else None
+                    spk_id = self.last_speaker_result.speaker_id if self.last_speaker_result else self.claimed_speaker_id
+                    evt = DetectionEvent(
+                        session_id=self.session_id,
+                        risk_score=self.last_risk_result.risk_score,
+                        risk_level=self.last_risk_result.risk_level,
+                        action=self.last_risk_result.action,
+                        deepfake_score=df_prob,
+                        deepfake_label=df_lbl,
+                        speaker_id=spk_id,
+                        speaker_similarity=spk_sim,
+                        liveness_score=liveness_score,
+                        replay_probability=replay_prob,
+                        confidence=self.last_risk_result.confidence,
+                        signals=self.last_risk_result.signals,
+                        contributing_signals=self.last_risk_result.contributing_signals,
+                        explanation=self.last_risk_result.explanation,
+                        metadata={
+                            "audio_quality": round(audio_qual, 3),
+                        },
+                    )
+                    record_detection_event(evt)
+                except Exception as db_err:
+                    logger.debug(f"Detection event db persistence notice: {db_err}")
             except Exception as e:
                 logger.warning(f"Risk evaluation error in session {self.session_id}: {e}")
 

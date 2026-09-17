@@ -15,6 +15,8 @@ interface CenterPanelProps {
   isStreaming: boolean;
   onToggleStream: () => void;
   audioAnalyser?: AnalyserNode | null;
+  waveformSample?: number[];
+  explanation?: string;
 }
 
 // Generate ASCII bar block (e.g. ████████████░ 91%)
@@ -39,6 +41,8 @@ export const CenterPanel: React.FC<CenterPanelProps> = ({
   isStreaming,
   onToggleStream,
   audioAnalyser,
+  waveformSample,
+  explanation,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -80,7 +84,20 @@ export const CenterPanel: React.FC<CenterPanelProps> = ({
 
       // Draw real or simulated waveform
       ctx.lineWidth = 2;
-      if (audioAnalyser) {
+      if (waveformSample && waveformSample.length > 0) {
+        ctx.strokeStyle = '#06b6d4';
+        ctx.beginPath();
+        const sliceWidth = width / waveformSample.length;
+        let x = 0;
+        for (let i = 0; i < waveformSample.length; i++) {
+          const v = waveformSample[i];
+          const y = height / 2 - v * (height * 0.45);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+          x += sliceWidth;
+        }
+        ctx.stroke();
+      } else if (audioAnalyser) {
         const bufferLength = audioAnalyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
         audioAnalyser.getByteTimeDomainData(dataArray);
@@ -117,7 +134,7 @@ export const CenterPanel: React.FC<CenterPanelProps> = ({
 
     render();
     return () => cancelAnimationFrame(animationFrameId);
-  }, [audioAnalyser, isStreaming, vadActive]);
+  }, [audioAnalyser, isStreaming, vadActive, waveformSample]);
 
   // Risk Color Helper
   const getRiskColor = (score: number) => {
@@ -313,6 +330,19 @@ export const CenterPanel: React.FC<CenterPanelProps> = ({
           className="w-full h-[140px] block"
         />
       </div>
+
+      {/* EXPLANATION / REASONING CARD */}
+      {explanation && (
+        <div className="rounded-xl bg-slate-950/90 border border-slate-800 p-4 font-mono text-xs text-slate-300 shadow-inner">
+          <div className="flex items-center gap-2 text-cyan-400 font-bold mb-1.5 uppercase text-[11px] tracking-wider">
+            <span>🛡️</span>
+            <span>Multi-Factor Risk Engine Explanation</span>
+          </div>
+          <div className="whitespace-pre-line leading-relaxed text-slate-300 text-[11px] bg-slate-900/60 p-2.5 rounded border border-slate-800/80">
+            {explanation}
+          </div>
+        </div>
+      )}
 
     </section>
   );
