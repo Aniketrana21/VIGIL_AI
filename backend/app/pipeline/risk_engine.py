@@ -194,18 +194,50 @@ class MultiFactorRiskEngine:
             signals.append("POOR_AUDIO_QUALITY")
             contrib.append(f"Degraded audio quality: {int(round(audio_qual * 100))}%")
 
-        # 6. Contextual Risk Signals
+        # 6. Contextual Risk Signals (Phase 11 Conversation Intelligence)
+        high_risk_credential_or_financial = False
         for ctx in context_signals:
-            if ctx == "FINANCIAL_REQUEST":
+            if ctx in ["FINANCIAL_REQUEST", "MONEY_TRANSFER"]:
                 total_points += 15.0
+                high_risk_credential_or_financial = True
                 if "FINANCIAL_REQUEST" not in signals:
                     signals.append("FINANCIAL_REQUEST")
                     contrib.append("High-risk financial transaction requested")
+            elif ctx in ["OTP_REQUEST", "PASSWORD_REQUEST", "BANK_CREDENTIAL_REQUEST"]:
+                total_points += 20.0
+                high_risk_credential_or_financial = True
+                if ctx not in signals:
+                    signals.append(ctx)
+                    contrib.append(f"High-risk authentication credential request ({ctx})")
+            elif ctx in ["EMERGENCY_MONEY_REQUEST", "ACCOUNT_TAKEOVER_ATTEMPT"]:
+                total_points += 25.0
+                high_risk_credential_or_financial = True
+                if ctx not in signals:
+                    signals.append(ctx)
+                    contrib.append(f"Severe social engineering threat ({ctx})")
+            elif ctx == "UPI_REQUEST":
+                total_points += 15.0
+                high_risk_credential_or_financial = True
+                if "UPI_REQUEST" not in signals:
+                    signals.append("UPI_REQUEST")
+                    contrib.append("Direct UPI / VPA payment solicitation detected")
+            elif ctx in ["IDENTITY_VERIFICATION_REQUEST", "CONFIDENTIAL_INFO_REQUEST"]:
+                total_points += 15.0
+                if ctx not in signals:
+                    signals.append(ctx)
+                    contrib.append(f"Sensitive information solicitation ({ctx})")
             else:
                 total_points += 10.0
                 if ctx not in signals:
                     signals.append(ctx)
                     contrib.append(f"Contextual alert: {ctx}")
+
+        # Compounding synergy: Voice clone + Credential/Emergency money solicitation = Escalated Threat
+        if high_risk_credential_or_financial and p_df >= 0.70:
+            total_points += 25.0
+            if "VOICE_CLONE_SOCIAL_ENGINEERING_SYNERGY" not in signals:
+                signals.append("VOICE_CLONE_SOCIAL_ENGINEERING_SYNERGY")
+                contrib.append("Critical threat: Synthetic voice clone attempting credential/financial social engineering")
 
         # 7. Model Confidence & Safety Assessment
         is_low_confidence = conf < self.min_confidence_threshold

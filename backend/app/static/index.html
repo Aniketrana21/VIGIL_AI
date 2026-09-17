@@ -226,6 +226,174 @@
           </ul>
         </div>
       </div>
+
+      <!-- PHASE 10: ADAPTIVE CHALLENGE-RESPONSE VERIFICATION (DEMO KILLER FEATURE) -->
+      <div class="card-header" style="margin-top: 1.25rem; border-top: 1px solid var(--border-subtle); padding-top: 1rem;">
+        <div class="header-title">
+          <span class="tag tag-purple">DEMO FEATURE</span>
+          <h2>ADAPTIVE CHALLENGE-RESPONSE</h2>
+        </div>
+        <div id="challenge-status-badge" class="verdict-pill verdict-idle">
+          READY
+        </div>
+      </div>
+
+      <div class="risk-engine-card" style="margin-top: 0.5rem; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(168, 85, 247, 0.25);">
+        <!-- Trigger indicator & CTA -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span style="font-size: 0.8rem; color: var(--text-muted);">Trigger Rule:</span>
+            <span id="challenge-trigger-reason-tag" style="font-size: 0.75rem; background: rgba(245, 158, 11, 0.15); color: var(--amber-accent); padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 600; font-family: var(--font-mono);">
+              Auto (Risk ≥ HIGH | Conf &lt; 0.60 | Inconclusive)
+            </span>
+          </div>
+          <button id="btn-generate-challenge" class="btn btn-primary" style="padding: 0.35rem 0.75rem; font-size: 0.8rem; background: #9333ea; border-color: #a855f7;">
+            <span>🎯 Generate Challenge</span>
+          </button>
+        </div>
+
+        <!-- Live Challenge Display -->
+        <div id="challenge-prompt-box" style="padding: 0.85rem; border-radius: 8px; background: rgba(0,0,0,0.4); border: 1px dashed rgba(168, 85, 247, 0.4); text-align: center; margin-bottom: 0.75rem;">
+          <span style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); display: block; margin-bottom: 0.25rem;">Live Ephemeral Challenge Prompt:</span>
+          <div id="challenge-prompt-text" style="font-size: 1.2rem; font-weight: 700; color: #c084fc; font-family: var(--font-mono); letter-spacing: 0.02em;">
+            "Please repeat: blue mango."
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted);">
+            <span id="challenge-id-label">ID: chal_demo_ready</span>
+            <span id="challenge-timer-label" style="color: var(--amber-accent); font-weight: 600; font-family: var(--font-mono);">TTL: 12.0s</span>
+          </div>
+          <!-- TTL Progress bar -->
+          <div style="width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-top: 0.35rem; overflow: hidden;">
+            <div id="challenge-ttl-bar" style="width: 100%; height: 100%; background: #c084fc; transition: width 0.2s linear;"></div>
+          </div>
+        </div>
+
+        <!-- Explicit User Consent & Disclosure -->
+        <div style="display: flex; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.75rem; padding: 0.5rem; border-radius: 6px; background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.2);">
+          <input type="checkbox" id="challenge-consent-toggle" checked style="margin-top: 0.2rem; cursor: pointer;" />
+          <label for="challenge-consent-toggle" style="font-size: 0.75rem; color: var(--text-muted); line-height: 1.35; cursor: pointer;">
+            <b>User Consent:</b> I explicitly consent to ephemeral recording and verification under VIGIL-AI Zero-Retention Privacy Policy.
+          </label>
+        </div>
+
+        <!-- Verification Multi-Model Results Matrix -->
+        <div class="df-metrics-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 0.75rem;">
+          <div class="df-metric-box">
+            <span class="df-metric-label">Deepfake Prob:</span>
+            <span id="disp-chal-deepfake" class="df-metric-val text-crimson">--%</span>
+          </div>
+          <div class="df-metric-box">
+            <span class="df-metric-label">Speaker Sim:</span>
+            <span id="disp-chal-speaker" class="df-metric-val text-cyan">--%</span>
+          </div>
+          <div class="df-metric-box">
+            <span class="df-metric-label">Liveness:</span>
+            <span id="disp-chal-liveness" class="df-metric-val text-emerald">--%</span>
+          </div>
+        </div>
+
+        <!-- User Warning & Actions Banner -->
+        <div id="challenge-warning-banner" style="display: none; padding: 0.6rem; border-radius: 6px; background: rgba(244, 63, 94, 0.15); border: 1px solid rgba(244, 63, 94, 0.4); margin-bottom: 0.75rem;">
+          <div style="font-size: 0.8rem; font-weight: 700; color: #fb7185; display: flex; align-items: center; gap: 0.35rem;">
+            <span>🚨</span>
+            <span id="challenge-warning-title">CRITICAL RISK: VERIFICATION FAILED</span>
+          </div>
+          <div id="challenge-warning-body" style="font-size: 0.75rem; color: #fecdd3; margin-top: 0.25rem; line-height: 1.35;">
+            High probability of synthetic speech or replay. Recommend independent out-of-band verification.
+          </div>
+        </div>
+
+        <!-- Demo Simulators for Challenge-Response -->
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+          <button id="btn-chal-sim-pass" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.35rem 0.6rem; border-color: rgba(16, 185, 129, 0.4);" title="Simulate authentic live human speech response">
+            <span>✅ Submit Clean Response (Pass)</span>
+          </button>
+          <button id="btn-chal-sim-fail" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.35rem 0.6rem; border-color: rgba(244, 63, 94, 0.4);" title="Simulate AI voice clone response (spoof/vocoder artifacts)">
+            <span>🚨 Submit Clone Response (Fail &amp; Block)</span>
+          </button>
+          <button id="btn-chal-sim-timeout" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.35rem 0.6rem; border-color: rgba(245, 158, 11, 0.4);" title="Test fast TTL expiration failure">
+            <span>⏱️ Test TTL Expiration</span>
+          </button>
+        </div>
+
+        <!-- Honesty Disclaimer -->
+        <div class="disclaimer-banner" style="background: rgba(168, 85, 247, 0.08); border-color: rgba(168, 85, 247, 0.25); margin-top: 0.75rem;">
+          <span class="disclaimer-icon">ℹ️</span>
+          <span class="disclaimer-text">
+            <b>Platform Disclaimer:</b> VIGIL-AI does not claim challenge-response is impossible for modern real-time AI systems; it serves as an adaptive defense-in-depth barrier.
+          </span>
+        </div>
+      </div>
+
+      <!-- PHASE 11: CONVERSATION INTELLIGENCE (WHISPER ASR & CONTEXTUAL INTENT) -->
+      <div class="card-header" style="margin-top: 1.25rem; border-top: 1px solid var(--border-subtle); padding-top: 1rem;">
+        <div class="header-title">
+          <span class="tag tag-cyan">SPEECH UNDERSTANDING</span>
+          <h2>CONVERSATION INTELLIGENCE</h2>
+        </div>
+        <div id="conv-intent-badge" class="verdict-pill verdict-idle">
+          BENIGN
+        </div>
+      </div>
+
+      <div class="risk-engine-card" style="margin-top: 0.5rem; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(56, 189, 248, 0.25);">
+        <!-- Metric Grid -->
+        <div class="df-metrics-grid" style="grid-template-columns: 1fr 1fr; margin-bottom: 0.75rem;">
+          <div class="df-metric-box">
+            <span class="df-metric-label">Detected Intent:</span>
+            <span id="disp-conv-intent" class="df-metric-val text-cyan">BENIGN_CONVERSATION</span>
+          </div>
+          <div class="df-metric-box">
+            <span class="df-metric-label">Risk Signal:</span>
+            <span id="disp-conv-risk" class="df-metric-val text-emerald">0.03</span>
+          </div>
+        </div>
+
+        <!-- Evidence Box -->
+        <div class="explainability-box" style="margin-top: 0.25rem; padding: 0.65rem; background: rgba(0,0,0,0.3); border-radius: 6px;">
+          <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 0.2rem;">Contextual Evidence:</span>
+          <div id="disp-conv-evidence" style="font-size: 0.85rem; color: var(--text-main); font-family: var(--font-mono); line-height: 1.35;">
+            nominal conversation with no detected scam, credential, or financial solicitation indicators
+          </div>
+        </div>
+
+        <!-- Ephemeral Transcript Input & Test Console -->
+        <div style="margin-top: 0.75rem;">
+          <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
+            <input type="text" id="conv-transcript-input" placeholder="Type caller phrase or click simulator below..." style="flex: 1; padding: 0.45rem 0.75rem; border-radius: 6px; background: rgba(0,0,0,0.5); border: 1px solid var(--border-card); color: var(--text-main); font-family: var(--font-mono); font-size: 0.8rem;" />
+            <button id="btn-conv-analyze" class="btn btn-primary" style="padding: 0.45rem 0.85rem; font-size: 0.8rem;">
+              <span>Analyze</span>
+            </button>
+          </div>
+
+          <!-- Quick Test Scenarios -->
+          <div style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+            <button class="btn btn-secondary btn-conv-demo" data-text="Send me the OTP" style="font-size: 0.7rem; padding: 0.25rem 0.5rem; border-color: rgba(244, 63, 94, 0.4);">
+              <span>🔑 "Send me the OTP" (High Risk)</span>
+            </button>
+            <button class="btn btn-secondary btn-conv-demo" data-text="What's an OTP?" style="font-size: 0.7rem; padding: 0.25rem 0.5rem; border-color: rgba(16, 185, 129, 0.4);">
+              <span>❓ "What's an OTP?" (Informational)</span>
+            </button>
+            <button class="btn btn-secondary btn-conv-demo" data-text="Mom I had an accident, wire 50,000 rupees urgently" style="font-size: 0.7rem; padding: 0.25rem 0.5rem; border-color: rgba(244, 63, 94, 0.4);">
+              <span>🚨 "Emergency wire transfer"</span>
+            </button>
+            <button class="btn btn-secondary btn-conv-demo" data-text="Send 5000 to my UPI ID at okhdfcbank" style="font-size: 0.7rem; padding: 0.25rem 0.5rem; border-color: rgba(245, 158, 11, 0.4);">
+              <span>📱 "Pay on UPI"</span>
+            </button>
+            <button class="btn btn-secondary btn-conv-demo" data-text="Hey how are you doing today?" style="font-size: 0.7rem; padding: 0.25rem 0.5rem;">
+              <span>💬 "Hey how are you?"</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Privacy & Decoupling Notice -->
+        <div class="disclaimer-banner" style="background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.25); margin-top: 0.75rem;">
+          <span class="disclaimer-icon">🔒</span>
+          <span class="disclaimer-text">
+            <b>Zero-Retention Privacy:</b> Transcripts are evaluated ephemerally and discarded immediately without persistent storage. Whisper ASR extracts linguistic intent only; it is decoupled from acoustic voice spoof detection.
+          </span>
+        </div>
+      </div>
     </section>
 
     <!-- RIGHT PANEL: DEEPFAKE ANALYSIS & TIMELINE -->

@@ -296,6 +296,15 @@ function updateTelemetryUI(d, windowsCount) {
         riskContributingList.appendChild(li);
       }
     }
+
+    // Phase 10 Adaptive Challenge Trigger Check
+    if ((level === "HIGH" || level === "CRITICAL" || action === "CHALLENGE") && (!activeChallengeState || activeChallengeState.status !== "PENDING")) {
+      if (challengeTriggerReasonTag) {
+        challengeTriggerReasonTag.textContent = `TRIGGER RECOMMENDED (${level} Risk)`;
+        challengeTriggerReasonTag.style.background = "rgba(239, 68, 68, 0.25)";
+        challengeTriggerReasonTag.style.color = "#f87171";
+      }
+    }
   }
 
   // ─── Phase 9: Liveness & Acoustic Replay Analysis ───
@@ -669,6 +678,371 @@ if (btnEnrollAlice) {
     }
   });
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// PHASE 10: ADAPTIVE CHALLENGE-RESPONSE VERIFICATION CONTROLLER
+// ═══════════════════════════════════════════════════════════════════
+const challengeStatusBadge = document.getElementById("challenge-status-badge");
+const challengeTriggerReasonTag = document.getElementById("challenge-trigger-reason-tag");
+const btnGenerateChallenge = document.getElementById("btn-generate-challenge");
+const challengePromptBox = document.getElementById("challenge-prompt-box");
+const challengePromptText = document.getElementById("challenge-prompt-text");
+const challengeIdLabel = document.getElementById("challenge-id-label");
+const challengeTimerLabel = document.getElementById("challenge-timer-label");
+const challengeTtlBar = document.getElementById("challenge-ttl-bar");
+const challengeConsentToggle = document.getElementById("challenge-consent-toggle");
+const dispChalDeepfake = document.getElementById("disp-chal-deepfake");
+const dispChalSpeaker = document.getElementById("disp-chal-speaker");
+const dispChalLiveness = document.getElementById("disp-chal-liveness");
+const challengeWarningBanner = document.getElementById("challenge-warning-banner");
+const challengeWarningTitle = document.getElementById("challenge-warning-title");
+const challengeWarningBody = document.getElementById("challenge-warning-body");
+const btnChalSimPass = document.getElementById("btn-chal-sim-pass");
+const btnChalSimFail = document.getElementById("btn-chal-sim-fail");
+const btnChalSimTimeout = document.getElementById("btn-chal-sim-timeout");
+
+let activeChallengeState = null;
+let challengeCountdownInterval = null;
+
+function updateChallengeStatusBadge(status) {
+  if (!challengeStatusBadge) return;
+  challengeStatusBadge.textContent = status;
+  if (status === "PASSED") {
+    challengeStatusBadge.className = "verdict-pill verdict-allow";
+  } else if (status === "FAILED") {
+    challengeStatusBadge.className = "verdict-pill verdict-block";
+  } else if (status === "EXPIRED") {
+    challengeStatusBadge.className = "verdict-pill verdict-warn";
+  } else if (status === "PENDING") {
+    challengeStatusBadge.className = "verdict-pill verdict-uncertain";
+  } else {
+    challengeStatusBadge.className = "verdict-pill verdict-idle";
+  }
+}
+
+function startChallengeCountdown(ttlSeconds) {
+  if (challengeCountdownInterval) clearInterval(challengeCountdownInterval);
+  const startTime = Date.now();
+  const totalMs = ttlSeconds * 1000;
+
+  challengeCountdownInterval = setInterval(() => {
+    const elapsed = Date.now() - startTime;
+    const remainingMs = Math.max(0, totalMs - elapsed);
+    const remainingSec = (remainingMs / 1000).toFixed(1);
+
+    if (challengeTimerLabel) {
+      challengeTimerLabel.textContent = `TTL: ${remainingSec}s`;
+    }
+
+    if (challengeTtlBar) {
+      const pct = (remainingMs / totalMs) * 100;
+      challengeTtlBar.style.width = `${pct}%`;
+      if (pct < 25) {
+        challengeTtlBar.style.background = "#ef4444";
+      } else if (pct < 50) {
+        challengeTtlBar.style.background = "#f59e0b";
+      } else {
+        challengeTtlBar.style.background = "#c084fc";
+      }
+    }
+
+    if (remainingMs <= 0) {
+      clearInterval(challengeCountdownInterval);
+      if (activeChallengeState && activeChallengeState.status === "PENDING") {
+        activeChallengeState.status = "EXPIRED";
+        updateChallengeStatusBadge("EXPIRED");
+        logEvent(`⏱️ Challenge ${activeChallengeState.challenge_id} EXPIRED (TTL elapsed).`);
+      }
+    }
+  }, 100);
+}
+
+async function requestNewChallenge(triggerReason = "MANUAL_REQUEST") {
+  logEvent(`🎯 Generating Adaptive Challenge (Reason: ${triggerReason})...`);
+  try {
+    const res = await fetch("/api/v1/challenge/generate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": "vigil-ai-hackathon-demo-key-2026",
+      },
+      body: JSON.stringify({
+        trigger_reason: triggerReason,
+        custom_ttl_seconds: 12.0,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      logEvent(`❌ Challenge generation failed: ${err.detail || "Server error"}`);
+      return;
+    }
+
+    const data = await res.json();
+    activeChallengeState = data;
+
+    if (challengePromptText) {
+      challengePromptText.textContent = `"${data.prompt_text}"`;
+    }
+    if (challengeIdLabel) {
+      challengeIdLabel.textContent = `ID: ${data.challenge_id}`;
+    }
+    if (challengeTriggerReasonTag) {
+      challengeTriggerReasonTag.textContent = `Triggered: ${triggerReason}`;
+    }
+
+    if (challengeWarningBanner) challengeWarningBanner.style.display = "none";
+    if (dispChalDeepfake) dispChalDeepfake.textContent = "--%";
+    if (dispChalSpeaker) dispChalSpeaker.textContent = "--%";
+    if (dispChalLiveness) dispChalLiveness.textContent = "--%";
+
+    updateChallengeStatusBadge("PENDING");
+    startChallengeCountdown(data.ttl_seconds || 12.0);
+    logEvent(`✅ Active Challenge [${data.challenge_id}]: "${data.prompt_text}" (TTL: ${data.ttl_seconds}s)`);
+  } catch (e) {
+    logEvent(`❌ Network error generating challenge: ${e.message}`);
+  }
+}
+
+function generateSynthesizedPCMBase64(mode = "clean") {
+  const sampleRate = 16000;
+  const duration = 1.5;
+  const numSamples = Math.floor(sampleRate * duration);
+  const pcmBuffer = new Int16Array(numSamples);
+
+  for (let i = 0; i < numSamples; i++) {
+    const t = i / sampleRate;
+    let sample = 0;
+
+    if (mode === "clean") {
+      // Natural human speech envelope (syllabic 3.7Hz modulation + 130Hz pitch + micro-jitter)
+      const f0 = 130.0 * (1.0 + 0.015 * Math.sin(2 * Math.PI * 3.7 * t));
+      const voice = 0.5 * Math.sin(2 * Math.PI * f0 * t) + 0.25 * Math.sin(2 * Math.PI * 2 * f0 * t);
+      const envelope = 0.5 * (1.0 + Math.sin(2 * Math.PI * 4.0 * t)) ** 2;
+      sample = voice * envelope * 0.85;
+    } else {
+      // AI voice clone / vocoder tone (soft-clipped flat dynamic range, unnatural phase)
+      const tone = 0.9 * Math.sin(2 * Math.PI * 150.0 * t);
+      sample = Math.tanh(tone * 4.0) * 0.85;
+    }
+
+    pcmBuffer[i] = Math.round(Math.max(-1.0, Math.min(1.0, sample)) * 32767);
+  }
+
+  // Convert Int16Array to binary base64
+  const bytes = new Uint8Array(pcmBuffer.buffer);
+  let binary = "";
+  for (let b = 0; b < bytes.byteLength; b++) {
+    binary += String.fromCharCode(bytes[b]);
+  }
+  return btoa(binary);
+}
+
+async function verifyChallengePayload(mode = "clean", simulateTimeout = false) {
+  if (!activeChallengeState) {
+    await requestNewChallenge();
+    if (!activeChallengeState) return;
+  }
+
+  const consent = challengeConsentToggle ? challengeConsentToggle.checked : true;
+  if (!consent) {
+    alert("User consent is required! Check the consent box to proceed.");
+    logEvent("⚠️ Challenge verification aborted: explicit user consent withheld.");
+    return;
+  }
+
+  if (simulateTimeout) {
+    logEvent("⏳ Simulating expired challenge response verification...");
+  } else {
+    logEvent(`🔍 Submitting challenge response (${mode === "clean" ? "Clean Human" : "AI Voice Clone"})...`);
+  }
+
+  const audioB64 = generateSynthesizedPCMBase64(mode);
+  const latencyMs = mode === "clean" ? 400.0 : 15.0; // Robotic turn-taking for clone
+
+  try {
+    const res = await fetch("/api/v1/challenge/verify", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": "vigil-ai-hackathon-demo-key-2026",
+      },
+      body: JSON.stringify({
+        challenge_id: activeChallengeState.challenge_id,
+        user_consent: consent,
+        audio_base64: audioB64,
+        claimed_speaker_id: "alice",
+        turn_taking_latency_ms: latencyMs,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      logEvent(`❌ Challenge verification API error: ${err.detail || "Error"}`);
+      return;
+    }
+
+    const data = await res.json();
+    if (challengeCountdownInterval) clearInterval(challengeCountdownInterval);
+
+    // Update returned metrics
+    if (dispChalDeepfake) {
+      dispChalDeepfake.textContent = `${Math.round(data.deepfake_probability * 100)}%`;
+    }
+    if (dispChalSpeaker) {
+      dispChalSpeaker.textContent = data.speaker_similarity !== null ? `${Math.round(data.speaker_similarity * 100)}%` : "--";
+    }
+    if (dispChalLiveness) {
+      dispChalLiveness.textContent = `${Math.round(data.liveness * 100)}%`;
+    }
+
+    updateChallengeStatusBadge(data.challenge_status);
+
+    // Warning Banner and Actions
+    if (data.challenge_status === "FAILED") {
+      if (challengeWarningBanner) {
+        challengeWarningBanner.style.display = "block";
+        if (challengeWarningTitle) challengeWarningTitle.textContent = `${data.risk_level} RISK: VERIFICATION FAILED [${data.recommended_action}]`;
+        if (challengeWarningBody) challengeWarningBody.textContent = data.user_warning || "Verification failed.";
+      }
+      logEvent(`🚨 CHALLENGE FAILED [Action: ${data.recommended_action}]: ${data.reasons ? data.reasons.join(" | ") : ""}`);
+    } else if (data.challenge_status === "EXPIRED") {
+      if (challengeWarningBanner) {
+        challengeWarningBanner.style.display = "block";
+        if (challengeWarningTitle) challengeWarningTitle.textContent = "CHALLENGE EXPIRED";
+        if (challengeWarningBody) challengeWarningBody.textContent = data.user_warning || "Response arrived after TTL expiration.";
+      }
+      logEvent(`⏱️ Challenge EXPIRED: ${data.user_warning}`);
+    } else {
+      if (challengeWarningBanner) challengeWarningBanner.style.display = "none";
+      logEvent(`✅ CHALLENGE PASSED: Verified across Deepfake, Speaker & Liveness models.`);
+    }
+  } catch (e) {
+    logEvent(`❌ Network error during challenge verification: ${e.message}`);
+  }
+}
+
+// Event Listeners for Challenge Buttons
+if (btnGenerateChallenge) {
+  btnGenerateChallenge.addEventListener("click", () => requestNewChallenge("MANUAL_REQUEST"));
+}
+
+if (btnChalSimPass) {
+  btnChalSimPass.addEventListener("click", () => verifyChallengePayload("clean", false));
+}
+
+if (btnChalSimFail) {
+  btnChalSimFail.addEventListener("click", () => verifyChallengePayload("clone", false));
+}
+
+if (btnChalSimTimeout) {
+  btnChalSimTimeout.addEventListener("click", async () => {
+    // Generate an ultra-fast expiring challenge
+    logEvent("⏱️ Generating challenge with immediate 0.1s TTL...");
+    try {
+      const res = await fetch("/api/v1/challenge/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": "vigil-ai-hackathon-demo-key-2026",
+        },
+        body: JSON.stringify({
+          trigger_reason: "MANUAL_REQUEST",
+          custom_ttl_seconds: 0.1,
+        }),
+      });
+      const chal = await res.json();
+      activeChallengeState = chal;
+      if (challengePromptText) challengePromptText.textContent = `"${chal.prompt_text}"`;
+      if (challengeIdLabel) challengeIdLabel.textContent = `ID: ${chal.challenge_id}`;
+      // Wait 300ms so it is strictly expired
+      setTimeout(() => verifyChallengePayload("clean", true), 300);
+    } catch (e) {
+      logEvent(`❌ Error in TTL expiration simulation: ${e.message}`);
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PHASE 11: CONVERSATION INTELLIGENCE CONTROLLER
+// ═══════════════════════════════════════════════════════════════════
+const convIntentBadge = document.getElementById("conv-intent-badge");
+const dispConvIntent = document.getElementById("disp-conv-intent");
+const dispConvRisk = document.getElementById("disp-conv-risk");
+const dispConvEvidence = document.getElementById("disp-conv-evidence");
+const convTranscriptInput = document.getElementById("conv-transcript-input");
+const btnConvAnalyze = document.getElementById("btn-conv-analyze");
+const btnConvDemos = document.querySelectorAll(".btn-conv-demo");
+
+async function runConversationAnalysis(text) {
+  if (!text || !text.trim()) return;
+  logEvent(`🔍 Analyzing conversation intent for: "${text}"...`);
+
+  try {
+    const res = await fetch("/api/v1/conversation/analyze", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": "vigil-ai-hackathon-demo-key-2026",
+      },
+      body: JSON.stringify({
+        transcript: text.trim(),
+        user_consent: true,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      logEvent(`❌ Conversation analysis error: ${err.detail || "Server error"}`);
+      return;
+    }
+
+    const data = await res.json();
+    if (dispConvIntent) dispConvIntent.textContent = data.intent;
+    if (dispConvRisk) {
+      dispConvRisk.textContent = data.risk_signal.toFixed(2);
+      if (data.risk_signal >= 0.80) dispConvRisk.className = "df-metric-val text-crimson";
+      else if (data.risk_signal >= 0.50) dispConvRisk.className = "df-metric-val text-amber";
+      else dispConvRisk.className = "df-metric-val text-emerald";
+    }
+    if (dispConvEvidence) dispConvEvidence.textContent = data.evidence;
+
+    if (convIntentBadge) {
+      convIntentBadge.textContent = data.intent;
+      if (data.risk_signal >= 0.80) convIntentBadge.className = "verdict-pill verdict-block";
+      else if (data.risk_signal >= 0.50) convIntentBadge.className = "verdict-pill verdict-warn";
+      else if (data.intent === "INFORMATIONAL_QUERY") convIntentBadge.className = "verdict-pill verdict-uncertain";
+      else convIntentBadge.className = "verdict-pill verdict-allow";
+    }
+
+    logEvent(`🧠 Intent: ${data.intent} (Risk: ${data.risk_signal.toFixed(2)}) — "${data.evidence}"`);
+  } catch (e) {
+    logEvent(`❌ Network error analyzing conversation: ${e.message}`);
+  }
+}
+
+if (btnConvAnalyze) {
+  btnConvAnalyze.addEventListener("click", () => {
+    const text = convTranscriptInput ? convTranscriptInput.value : "";
+    runConversationAnalysis(text);
+  });
+}
+
+if (convTranscriptInput) {
+  convTranscriptInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      runConversationAnalysis(convTranscriptInput.value);
+    }
+  });
+}
+
+btnConvDemos.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const text = btn.getAttribute("data-text");
+    if (convTranscriptInput) convTranscriptInput.value = text;
+    runConversationAnalysis(text);
+  });
+});
 
 btnToggleMic.addEventListener("click", toggleMicrophone);
 

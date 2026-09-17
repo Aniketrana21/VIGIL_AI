@@ -67,6 +67,31 @@ class LivenessResult:
         }
 
 
+@dataclass
+class ConversationIntelligenceResult:
+    """
+    Standard output payload for Phase 11 Conversation Intelligence.
+    Conforms to specification:
+    {
+        "intent": "FINANCIAL_REQUEST",
+        "risk_signal": 0.88,
+        "evidence": "request for money transfer"
+    }
+    """
+    intent: str
+    risk_signal: float
+    evidence: str
+    transcript: Optional[str] = None
+    latency_ms: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "intent": self.intent,
+            "risk_signal": round(self.risk_signal, 2),
+            "evidence": self.evidence,
+        }
+
+
 class BaseAudioProcessor(ABC):
     """Abstract base class for all audio pipeline stages."""
 
