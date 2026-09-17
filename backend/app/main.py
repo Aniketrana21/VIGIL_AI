@@ -102,9 +102,19 @@ app.include_router(stream_ingest.router, prefix="/api/v1/stream", tags=["Audio I
 
 # Mount static files for web dashboard
 static_dir = Path(__file__).parent / "static"
+dist_dir = static_dir / "dist"
+
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     @app.get("/", include_in_schema=False)
+    @app.get("/soc", include_in_schema=False)
     async def serve_dashboard():
+        if dist_dir.exists() and (dist_dir / "index.html").exists():
+            return FileResponse(str(dist_dir / "index.html"))
         return FileResponse(str(static_dir / "index.html"))
+
+    @app.get("/legacy", include_in_schema=False)
+    async def serve_legacy_dashboard():
+        return FileResponse(str(static_dir / "index.html"))
+
