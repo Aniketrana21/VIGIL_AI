@@ -110,6 +110,66 @@ async def websocket_audio_ingest(
                             "type": "CONFIG_ACK",
                             "data": sync_session.get_telemetry()
                         }))
+                    elif msg_type == "TRANSCRIPT":
+                        transcript_text = parsed.get("text", "").strip()
+                        if transcript_text:
+                            from app.db.detection_store import DetectionEvent, record_detection_event
+                            from app.pipeline.conversation_intelligence import get_conversation_classifier
+                            
+                            ci = get_conversation_classifier()
+                            ci_result = ci.classify_intent(transcript_text)
+                            
+                            # Determine risk level and action
+                            risk_val = int(round(ci_result.risk_signal * 100))
+                            if risk_val >= 80:
+                                threat_lvl = "CRITICAL"
+                                act = "BLOCK"
+                            elif risk_val >= 50:
+                                threat_lvl = "HIGH"
+                                act = "WARN"
+                            elif risk_val >= 25:
+                                threat_lvl = "MEDIUM"
+                                act = "CHALLENGE"
+                            else:
+                                threat_lvl = "LOW"
+                                act = "ALLOW"
+                                
+                            evt = DetectionEvent(
+                                session_id=clean_session_id,
+                                risk_score=risk_val,
+                                risk_level=threat_lvl,
+                                action=act,
+                                conversation_intent=ci_result.intent.value,
+                                conversation_risk=round(ci_result.risk_signal, 3),
+                                confidence=0.95,
+                                signals=ci_result.signals,
+                                contributing_signals=[ci_result.evidence],
+                                explanation=f"Live Speaker Speech: \"{transcript_text}\" | Intent: {ci_result.intent.value} ({ci_result.evidence})",
+                                caller_id=parsed.get("caller_id", "MICROPHONE_SPEAKER"),
+                                metadata={
+                                    "transcript": transcript_text,
+                                    "source": "live_microphone_speech",
+                                    "is_final": parsed.get("is_final", True),
+                                },
+                            )
+                            record_detection_event(evt)
+                            logger.info(f"Persisted spoken transcript to database: '{transcript_text}' (Risk: {risk_val})")
+                            
+                            await websocket.send_text(json.dumps({
+                                "type": "TRANSCRIPT_STORED",
+                                "text": transcript_text,
+                                "intent": ci_result.intent.value,
+                                "risk_score": risk_val,
+                                "risk_level": threat_lvl,
+                                "action": act,
+                                "evidence": ci_result.evidence,
+                                "stored_in_db": True,
+                            }))
+                        else:
+                            await websocket.send_text(json.dumps({
+                                "type": "TRANSCRIPT_ACK",
+                                "status": "empty",
+                            }))
                     elif msg_type == "PIPELINE_METRICS":
                         # Return pipeline health metrics on demand
                         metrics = pipeline.get_pipeline_metrics()

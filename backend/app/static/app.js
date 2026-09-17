@@ -102,6 +102,17 @@ function connectWebSocket() {
       const msg = JSON.parse(event.data);
       if (msg.type === "TELEMETRY" && msg.data) {
         updateTelemetryUI(msg.data, msg.windows_count || 0);
+      } else if (msg.type === "TRANSCRIPT_STORED") {
+        const sttDbBadge = document.getElementById("stt-db-badge");
+        const sttIntentLabel = document.getElementById("stt-intent-label");
+        if (sttDbBadge) {
+          sttDbBadge.style.display = "inline-block";
+          sttDbBadge.textContent = `💾 Stored in DB (${msg.risk_level}: ${msg.risk_score})`;
+        }
+        if (sttIntentLabel) {
+          sttIntentLabel.textContent = `Intent: ${msg.intent} | Action: ${msg.action}`;
+        }
+        logEvent(`📝 Spoken speech transcribed & saved to DB: "${msg.text}" [${msg.intent}, Risk: ${msg.risk_score}]`);
       }
     } catch (e) {
       console.error("Error parsing telemetry message", e);
@@ -411,6 +422,137 @@ function updateTelemetryUI(d, windowsCount) {
   }
 }
 
+// Live Speech Recognition & Accumulator State
+let speechRecognition = null;
+let liveTranscriptAccumulator = "";
+
+function safeEscapeText(str) {
+  if (!str) return "";
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function startSpeechRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const liveTranscriptEl = document.getElementById("live-speaker-transcript");
+  const sttBadge = document.getElementById("stt-status-badge");
+  const sttDbBadge = document.getElementById("stt-db-badge");
+  const sttWordCount = document.getElementById("stt-word-count");
+  const sttIntentLabel = document.getElementById("stt-intent-label");
+
+  if (!SpeechRecognition) {
+    logEvent("Speech recognition: Web Speech API not supported in this browser. Backend acoustic analyzer active.");
+    if (sttBadge) {
+      sttBadge.textContent = "NO BROWSER STT";
+      sttBadge.className = "tag";
+    }
+    return;
+  }
+
+  try {
+    speechRecognition = new SpeechRecognition();
+    speechRecognition.continuous = true;
+    speechRecognition.interimResults = true;
+    speechRecognition.lang = "en-US";
+
+    if (sttBadge) {
+      sttBadge.textContent = "LISTENING";
+      sttBadge.className = "tag tag-green";
+    }
+    if (sttDbBadge) {
+      sttDbBadge.style.display = "none";
+    }
+    if (sttIntentLabel) {
+      sttIntentLabel.textContent = "Intent: Listening to speech...";
+    }
+
+    speechRecognition.onresult = (event) => {
+      let interimTranscript = "";
+      let newFinal = "";
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        const part = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          newFinal += part + " ";
+        } else {
+          interimTranscript += part;
+        }
+      }
+
+      if (newFinal.trim()) {
+        liveTranscriptAccumulator = (liveTranscriptAccumulator + " " + newFinal).trim();
+        const phrase = newFinal.trim();
+        
+        // 1. Stream transcript over WebSocket so backend saves it to SQLite DB and analyzes intent
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: "TRANSCRIPT",
+            text: phrase,
+            is_final: true,
+            caller_id: "LIVE_SPEAKER"
+          }));
+        }
+
+        // 2. Also forward to Conversation Intelligence Input
+        if (convTranscriptInput) {
+          convTranscriptInput.value = phrase;
+        }
+        runConversationAnalysis(phrase);
+      }
+
+      // Display live combined transcript in UI
+      const displayPhrase = (liveTranscriptAccumulator + (interimTranscript ? " " + interimTranscript : "")).trim();
+      if (liveTranscriptEl) {
+        if (displayPhrase) {
+          liveTranscriptEl.innerHTML = `<span style="color: #67e8f9; font-weight: 500;">🗣️ Speaker:</span> <span>${safeEscapeText(displayPhrase)}</span>`;
+        } else {
+          liveTranscriptEl.innerHTML = `<span style="color: var(--text-muted); font-style: italic;">Listening... speak into your microphone</span>`;
+        }
+        liveTranscriptEl.scrollTop = liveTranscriptEl.scrollHeight;
+      }
+
+      if (sttWordCount) {
+        const wordCount = displayPhrase ? displayPhrase.split(/\s+/).filter(Boolean).length : 0;
+        sttWordCount.textContent = `Words: ${wordCount}`;
+      }
+    };
+
+    speechRecognition.onerror = (err) => {
+      console.warn("Speech recognition notice:", err.error);
+    };
+
+    speechRecognition.onend = () => {
+      if (isRecording) {
+        // Automatically keep continuous listening active while mic is ON
+        try { speechRecognition.start(); } catch (e) {}
+      } else {
+        if (sttBadge) {
+          sttBadge.textContent = "STOPPED";
+          sttBadge.className = "tag";
+        }
+      }
+    };
+
+    speechRecognition.start();
+    logEvent("Speech-to-Text active: Spoken words will be displayed and saved to DB.");
+  } catch (e) {
+    console.warn("Could not start Web Speech Recognition:", e);
+  }
+}
+
+function stopSpeechRecognition() {
+  if (speechRecognition) {
+    try { speechRecognition.stop(); } catch (e) {}
+    speechRecognition = null;
+  }
+  const sttBadge = document.getElementById("stt-status-badge");
+  if (sttBadge) {
+    sttBadge.textContent = "IDLE";
+    sttBadge.className = "tag";
+  }
+}
+
 // Microphone Capture (16kHz Mono 16-bit PCM)
 async function toggleMicrophone() {
   if (isRecording) {
@@ -445,6 +587,9 @@ async function toggleMicrophone() {
     btnToggleMic.className = "btn btn-warning";
     btnToggleMic.querySelector(".btn-text").textContent = "Stop Microphone";
     logEvent("Microphone active at 16000Hz. Streaming PCM chunks...");
+
+    // Start Real-Time Speech-to-Text transcription
+    startSpeechRecognition();
   } catch (err) {
     alert("Microphone permission denied or device error: " + err.message);
   }
@@ -455,6 +600,8 @@ function stopRecording() {
   if (scriptProcessor) scriptProcessor.disconnect();
   if (audioContext) audioContext.close();
   if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+
+  stopSpeechRecognition();
 
   btnToggleMic.className = "btn btn-primary";
   btnToggleMic.querySelector(".btn-text").textContent = "Start Microphone";

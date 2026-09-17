@@ -1,4 +1,5 @@
 import base64
+import time
 from fastapi import APIRouter, Depends, HTTPException, status
 import numpy as np
 import torch
@@ -43,6 +44,31 @@ async def analyze_conversation(payload: ConversationAnalysisRequest):
     # Mode 1: Direct text transcript analysis
     if payload.transcript is not None:
         result = classifier.classify_intent(payload.transcript)
+        
+        # Persist conversation risk verdict to DB if consented
+        try:
+            from app.db.detection_store import DetectionEvent, record_detection_event
+            risk_val = int(round(result.risk_signal * 100))
+            threat_lvl = "CRITICAL" if risk_val >= 80 else ("HIGH" if risk_val >= 50 else ("MEDIUM" if risk_val >= 25 else "LOW"))
+            act = "BLOCK" if risk_val >= 80 else ("WARN" if risk_val >= 50 else ("CHALLENGE" if risk_val >= 25 else "ALLOW"))
+            
+            evt = DetectionEvent(
+                session_id=f"conv-{int(time.time())}" if "time" in globals() else "conv-session",
+                risk_score=risk_val,
+                risk_level=threat_lvl,
+                action=act,
+                conversation_intent=result.intent.value,
+                conversation_risk=round(result.risk_signal, 3),
+                confidence=0.95,
+                signals=result.signals,
+                contributing_signals=[result.evidence],
+                explanation=f"Transcript: \"{payload.transcript}\" | Analysis: {result.evidence}",
+                metadata={"transcript": payload.transcript, "source": "conversation_intelligence"},
+            )
+            record_detection_event(evt)
+        except Exception as e:
+            logger.debug(f"Conversation analysis DB save notice: {e}")
+
         return ConversationIntelligenceOutput(
             intent=result.intent,
             risk_signal=result.risk_signal,

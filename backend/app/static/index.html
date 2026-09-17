@@ -65,6 +65,24 @@
         </div>
       </div>
 
+      <!-- Real-Time Speaker Speech-To-Text & DB Persistence Display -->
+      <div class="explainability-box" id="live-stt-box" style="margin-top: 0.75rem; border-color: rgba(6, 182, 212, 0.4); background: rgba(6, 182, 212, 0.05);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+          <h3 style="margin: 0; display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--accent-cyan);">
+            <span>🎙️ Live Speaker Speech-To-Text</span>
+            <span id="stt-status-badge" class="tag" style="background: rgba(100, 116, 139, 0.2); color: var(--text-muted); font-size: 0.68rem; padding: 0.15rem 0.45rem;">IDLE</span>
+          </h3>
+          <span id="stt-db-badge" class="tag tag-green" style="display: none; font-size: 0.68rem; padding: 0.15rem 0.45rem;">💾 Stored in DB</span>
+        </div>
+        <div id="live-speaker-transcript" style="min-height: 54px; max-height: 120px; overflow-y: auto; padding: 0.55rem 0.75rem; border-radius: 6px; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.1); font-family: var(--font-mono); font-size: 0.85rem; color: var(--text-main); line-height: 1.4; word-break: break-word;">
+          <span style="color: var(--text-muted); font-style: italic;">Start microphone and speak — your speech will be transcribed and displayed here in real time, and automatically stored into the database.</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.4rem; font-size: 0.75rem; color: var(--text-muted);">
+          <span id="stt-word-count">Words: 0</span>
+          <span id="stt-intent-label" style="color: var(--accent-cyan);">Intent: Waiting for speech...</span>
+        </div>
+      </div>
+
       <!-- Interactive Stream Simulators for Testing -->
       <div class="explainability-box">
         <h3>Pipeline Stream Simulators</h3>

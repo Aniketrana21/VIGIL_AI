@@ -485,8 +485,33 @@ class AsyncInferencePipeline:
             profile.end_to_end_ms = (time.perf_counter() - profile.capture_ts) * 1000.0
             self._last_latency = profile
 
-            with self._lock:
-                self._latency_history.append(profile)
+            # Persist real-time detection event to database
+            try:
+                from app.db.detection_store import DetectionEvent, record_detection_event
+                evt = DetectionEvent(
+                    session_id=self.session_id,
+                    risk_score=risk_result.risk_score,
+                    risk_level=risk_result.risk_level,
+                    action=risk_result.action,
+                    deepfake_score=round(df_result.spoof_probability, 3),
+                    deepfake_label=df_result.label,
+                    speaker_id=self.claimed_speaker_id,
+                    speaker_similarity=spk_sim,
+                    liveness_score=round(liveness_score, 3),
+                    replay_probability=round(1.0 - liveness_score, 3),
+                    confidence=risk_result.confidence,
+                    signals=risk_result.signals,
+                    contributing_signals=risk_result.contributing_signals,
+                    explanation=risk_result.explanation,
+                    metadata={
+                        "source": "live_microphone_audio",
+                        "audio_quality": round(audio_qual, 3),
+                        "latency_ms": round(profile.end_to_end_ms, 2),
+                    },
+                )
+                record_detection_event(evt)
+            except Exception as e:
+                logger.debug(f"Async pipeline DB save notice: {e}")
 
             # Emit full telemetry
             telemetry = self._build_full_telemetry(profile)
