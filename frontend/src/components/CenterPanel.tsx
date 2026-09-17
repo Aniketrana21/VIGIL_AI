@@ -17,6 +17,7 @@ interface CenterPanelProps {
   audioAnalyser?: AnalyserNode | null;
   waveformSample?: number[];
   explanation?: string;
+  callerTranscript?: string;
 }
 
 // Generate ASCII bar block (e.g. ████████████░ 91%)
@@ -43,6 +44,7 @@ export const CenterPanel: React.FC<CenterPanelProps> = ({
   audioAnalyser,
   waveformSample,
   explanation,
+  callerTranscript,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -300,6 +302,46 @@ export const CenterPanel: React.FC<CenterPanelProps> = ({
             <span className="text-slate-400 block text-[11px]">CONFIDENCE</span>
             <span className="font-bold text-slate-200 text-sm">{Math.round(confidence * 100)}%</span>
           </div>
+        </div>
+      </div>
+
+      {/* CALLER SPEECH REAL-TIME TRANSCRIPTION DISPLAY */}
+      <div className="rounded-xl bg-slate-900/90 border border-cyan-500/30 p-4 font-mono text-xs shadow-lg">
+        <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+          <div className="flex items-center gap-2">
+            <span className="text-base">🎙️</span>
+            <span className="text-xs font-mono font-bold tracking-wider uppercase text-cyan-300">
+              Caller Speech Real-Time Transcription
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {callerTranscript && (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800 animate-pulse">
+                💾 AUTO-STORED IN DB
+              </span>
+            )}
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">
+              WHISPER &amp; STT
+            </span>
+          </div>
+        </div>
+
+        <div className="p-3.5 rounded-lg bg-black/60 border border-slate-800/80 min-h-[52px] flex items-center">
+          {callerTranscript ? (
+            <div className="space-y-1">
+              <div className="text-[10px] uppercase tracking-wider text-cyan-400 font-bold">
+                Spoken Phrase (Transcribed):
+              </div>
+              <p className="text-white text-sm font-semibold leading-relaxed">
+                "{callerTranscript}"
+              </p>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-slate-500 italic text-xs">
+              <span className="w-2 h-2 rounded-full bg-slate-600 animate-ping" />
+              <span>Start microphone and speak, or run a demo scenario — spoken caller text will appear here and evaluate in real time.</span>
+            </div>
+          )}
         </div>
       </div>
 

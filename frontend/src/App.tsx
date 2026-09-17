@@ -81,6 +81,7 @@ export const App: React.FC = () => {
             audioAnalyser={audioAnalyser}
             waveformSample={activeTelemetry.waveform_sample}
             explanation={activeTelemetry.explanation}
+            callerTranscript={activeTelemetry.live_transcript || activeTelemetry.conversation?.transcript}
           />
 
           {/* RIGHT PANEL: THREAT SIGNALS, TIMELINE, CONVERSATION INTELLIGENCE */}

@@ -33,12 +33,14 @@ export interface SecurityTelemetry {
     detail: string;
   }>;
 
-  // Conversation Intelligence
+  // Conversation Intelligence & Caller Speech
   conversation: {
     intent: string;
     risk_signal: number;
     evidence: string;
+    transcript?: string;
   } | null;
+  live_transcript?: string;
 
   // Adaptive Challenge
   active_challenge?: {

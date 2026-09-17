@@ -14,6 +14,7 @@ interface RightPanelProps {
     intent: string;
     risk_signal: number;
     evidence: string;
+    transcript?: string;
   } | null;
   activeChallenge?: {
     challenge_id: string;
@@ -127,6 +128,14 @@ export const RightPanel: React.FC<RightPanelProps> = ({
 
         {conversation ? (
           <div className="font-mono text-xs space-y-2 mt-2">
+            {conversation.transcript && (
+              <div className="p-2.5 rounded bg-purple-950/40 border border-purple-800/60">
+                <span className="text-[10px] text-purple-300 font-bold block mb-1">🗣️ SPOKEN PHRASE:</span>
+                <span className="text-white text-xs font-semibold leading-relaxed block">
+                  "{conversation.transcript}"
+                </span>
+              </div>
+            )}
             <div className="flex justify-between items-center bg-purple-950/30 px-2.5 py-1.5 rounded border border-purple-800/40">
               <span className="text-slate-400">INTENT:</span>
               <span className="text-purple-300 font-bold">{conversation.intent}</span>
@@ -136,7 +145,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
               <span className="text-rose-400 font-bold">{conversation.risk_signal.toFixed(2)}</span>
             </div>
             <div className="p-2 rounded bg-slate-950/60 border border-slate-800 text-[11px] text-slate-300 italic">
-              "{conversation.evidence}"
+              Evidence: "{conversation.evidence}"
             </div>
           </div>
         ) : (

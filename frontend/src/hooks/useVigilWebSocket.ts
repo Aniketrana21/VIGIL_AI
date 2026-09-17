@@ -48,6 +48,7 @@ export function useVigilWebSocket() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const lastPingTimeRef = useRef<number>(0);
+  const recognitionRef = useRef<any>(null);
 
   // Connect to FastAPI WebSocket Stream
   const connect = useCallback(() => {
@@ -97,6 +98,20 @@ export function useVigilWebSocket() {
                 vad_active: !!d.vad?.speech_detected,
               };
             });
+          } else if (msg.type === 'TRANSCRIPT_STORED') {
+            setTelemetry((prev) => ({
+              ...prev,
+              live_transcript: msg.text,
+              conversation: {
+                intent: msg.intent || prev.conversation?.intent || 'ANALYZED',
+                risk_signal: msg.risk_score !== undefined ? msg.risk_score / 100 : prev.conversation?.risk_signal || 0.1,
+                evidence: msg.evidence || `Transcribed: "${msg.text}"`,
+                transcript: msg.text,
+              },
+              risk_score: msg.risk_score !== undefined ? msg.risk_score : prev.risk_score,
+              risk_level: msg.risk_level || prev.risk_level,
+              action: msg.action || prev.action,
+            }));
           }
         } catch {
           // Non-JSON or binary
@@ -128,6 +143,14 @@ export function useVigilWebSocket() {
   const toggleStreaming = async () => {
     if (isStreaming) {
       // Stop
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+        recognitionRef.current = null;
+      }
       mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
       processorRef.current?.disconnect();
       audioContextRef.current?.close();
@@ -169,6 +192,71 @@ export function useVigilWebSocket() {
             wsRef.current.send(pcmBuffer.buffer);
           }
         };
+
+        // Real-time Speech-to-Text Transcription via Web Speech API
+        const SpeechRec = (window as unknown as { SpeechRecognition?: any; webkitSpeechRecognition?: any }).SpeechRecognition ||
+          (window as unknown as { SpeechRecognition?: any; webkitSpeechRecognition?: any }).webkitSpeechRecognition;
+
+        if (SpeechRec) {
+          try {
+            const recognition = new SpeechRec();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+
+            recognition.onresult = (evt: any) => {
+              let interim = '';
+              let finalTxt = '';
+              for (let i = evt.resultIndex; i < evt.results.length; ++i) {
+                const item = evt.results[i][0].transcript;
+                if (evt.results[i].isFinal) {
+                  finalTxt += item + ' ';
+                } else {
+                  interim += item;
+                }
+              }
+
+              const currentPhrase = (finalTxt || interim).trim();
+              if (currentPhrase) {
+                setTelemetry((prev) => ({
+                  ...prev,
+                  live_transcript: currentPhrase,
+                  conversation: {
+                    intent: prev.conversation?.intent || 'NOMINAL',
+                    risk_signal: prev.conversation?.risk_signal || 0.05,
+                    evidence: `Transcribed caller speech: "${currentPhrase}"`,
+                    transcript: currentPhrase,
+                  },
+                }));
+              }
+
+              if (finalTxt.trim() && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({
+                  type: 'TRANSCRIPT',
+                  text: finalTxt.trim(),
+                  is_final: true,
+                  caller_id: 'MIC_CALLER',
+                }));
+              }
+            };
+
+            recognition.onend = () => {
+              // Automatically restart recognition while microphone stream is alive
+              if (mediaStreamRef.current && mediaStreamRef.current.active) {
+                try {
+                  recognition.start();
+                } catch {
+                  // ignore
+                }
+              }
+            };
+
+            recognition.start();
+            recognitionRef.current = recognition;
+          } catch (sttErr) {
+            console.warn('Speech recognition init notice:', sttErr);
+          }
+        }
 
         setIsStreaming(true);
       } catch (err) {
