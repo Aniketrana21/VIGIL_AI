@@ -377,6 +377,81 @@ class SQLiteDetectionStore(DetectionStore):
                 }
         return await asyncio.to_thread(_sync_stats)
 
+    def get_detection_by_id_sync(self, event_id: int) -> Optional[DetectionEvent]:
+        with self._lock, sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM detection_events WHERE id = ?", (event_id,))
+            r = cursor.fetchone()
+            if not r:
+                return None
+            return DetectionEvent(
+                id=r["id"],
+                session_id=r["session_id"],
+                timestamp=r["timestamp"],
+                deepfake_score=r["deepfake_score"],
+                deepfake_label=r["deepfake_label"],
+                speaker_id=r["speaker_id"],
+                speaker_similarity=r["speaker_similarity"],
+                liveness_score=r["liveness_score"],
+                replay_probability=r["replay_probability"],
+                conversation_intent=r["conversation_intent"],
+                conversation_risk=r["conversation_risk"],
+                risk_score=r["risk_score"],
+                risk_level=r["risk_level"],
+                action=r["action"],
+                confidence=r["confidence"],
+                signals=json.loads(r["signals"]) if r["signals"] else [],
+                contributing_signals=json.loads(r["contributing_signals"]) if r["contributing_signals"] else [],
+                explanation=r["explanation"] or "",
+                caller_id=r["caller_id"],
+                metadata=json.loads(r["metadata"]) if r["metadata"] else {},
+            )
+
+    def delete_detection_sync(self, event_id: int) -> bool:
+        """Deletes a detection record by its primary key ID."""
+        with self._lock, sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM detection_events WHERE id = ?", (event_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def update_detection_sync(self, event_id: int, updates: Dict[str, Any]) -> bool:
+        """Updates fields of an existing detection record."""
+        valid_cols = {
+            "risk_score", "risk_level", "action", "deepfake_score", "deepfake_label",
+            "speaker_id", "speaker_similarity", "liveness_score", "replay_probability",
+            "conversation_intent", "conversation_risk", "confidence", "explanation", "caller_id"
+        }
+        filtered = {k: v for k, v in updates.items() if k in valid_cols}
+        if "signals" in updates:
+            filtered["signals"] = json.dumps(updates["signals"])
+        if "metadata" in updates:
+            filtered["metadata"] = json.dumps(updates["metadata"])
+
+        if not filtered:
+            return False
+
+        set_clauses = [f"{k} = ?" for k in filtered.keys()]
+        values = list(filtered.values()) + [event_id]
+
+        with self._lock, sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            query = f"UPDATE detection_events SET {', '.join(set_clauses)} WHERE id = ?"
+            cursor.execute(query, tuple(values))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def clear_detections_sync(self) -> int:
+        """Deletes all detection records from SQLite."""
+        with self._lock, sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM detection_events;")
+            count = cursor.rowcount
+            conn.commit()
+            return count
+
+
 
 # Global Store Singleton
 _detection_store_instance: Optional[DetectionStore] = None
