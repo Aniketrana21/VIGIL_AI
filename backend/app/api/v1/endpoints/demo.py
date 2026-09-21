@@ -217,7 +217,7 @@ async def run_demo_scenario(payload: RunDemoScenarioRequest):
         signals=risk_res.signals,
         contributing_signals=risk_res.contributing_signals,
         explanation=risk_res.explanation,
-        caller_id="+91***10 (SIH Demo)",
+        caller_id=f"demo_caller_{scenario.id}",
         metadata={
             "demo_mode": True,
             "scenario_id": scenario.id,

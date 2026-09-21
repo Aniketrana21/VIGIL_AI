@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { SecurityTelemetry } from '../types';
+import { getUserSession } from '../lib/session';
 
 export function useVigilWebSocket() {
   const [telemetry, setTelemetry] = useState<SecurityTelemetry>({
@@ -43,6 +44,9 @@ export function useVigilWebSocket() {
 
   const [isStreaming, setIsStreaming] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const dashboardWsRef = useRef<WebSocket | null>(null);
+  const [latestIncomingCall, setLatestIncomingCall] = useState<any | null>(null);
+
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -52,14 +56,156 @@ export function useVigilWebSocket() {
   const pendingSpeechTimeoutRef = useRef<any>(null);
   const lastTransmittedPhraseRef = useRef<string>('');
 
-  // Connect to FastAPI WebSocket Stream
-  const connect = useCallback(() => {
+  // Cleanly stops microphone audio capture
+  const stopAudioStreaming = useCallback(() => {
+    if (pendingSpeechTimeoutRef.current) {
+      clearTimeout(pendingSpeechTimeoutRef.current);
+    }
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {}
+      recognitionRef.current = null;
+    }
+    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+    mediaStreamRef.current = null;
+    processorRef.current?.disconnect();
+    processorRef.current = null;
+    audioContextRef.current?.close();
+    audioContextRef.current = null;
+    setIsStreaming(false);
+    setTelemetry((prev) => ({ ...prev, vad_active: false }));
+  }, []);
+
+  // Connect to Laptop SOC Dashboard WebSocket Event Bus (/ws/dashboard)
+  const connectDashboardWs = useCallback(() => {
+    const session = getUserSession();
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    // Default fallback to 8000 if running under Vite standalone dev port
-    const wsTarget = host.includes(':5173')
+    const baseTarget = host.includes(':5173')
+      ? `${protocol}//127.0.0.1:8000/ws/dashboard`
+      : `${protocol}//${host}/ws/dashboard`;
+    const wsTarget = `${baseTarget}?user_id=${encodeURIComponent(session.userId)}`;
+
+    try {
+      const dws = new WebSocket(wsTarget);
+      dashboardWsRef.current = dws;
+
+      dws.onopen = () => {
+        console.log('⚡ Connected to VIGIL-AI Dashboard WebSocket Event Bus:', wsTarget);
+      };
+
+      dws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.event === 'incoming_call') {
+            console.log('🚨 Incoming Call Event received via WebSocket:', data);
+            setLatestIncomingCall(data);
+            setTelemetry((prev) => ({
+              ...prev,
+              active_call: {
+                call_id: data.call_id,
+                phone_number: data.phone_number,
+                normalized_phone_number: data.normalized_phone_number,
+                masked_phone: data.masked_phone,
+                caller_name: data.caller_name,
+                company: data.company,
+                company_verification_status: data.company_verification_status,
+                contact_known: data.contact_known,
+                caller_type: data.caller_type,
+                previous_calls: data.previous_calls || 0,
+                calls_today: data.calls_today || 0,
+                last_call_timestamp: data.last_call_timestamp,
+                initial_risk: data.initial_risk || 0,
+                risk_level: data.risk_level || 'LOW',
+                recommended_action: data.recommended_action || 'ALLOW',
+                speaker_verification_status: data.speaker_verification_status || 'WAITING',
+                deepfake_detection_status: data.deepfake_detection_status || 'WAITING',
+                liveness_status: data.liveness_status || 'WAITING',
+                cellular_audio_available: data.cellular_audio_available ?? false,
+                call_transport: data.call_transport || 'CELLULAR',
+                timestamp: data.timestamp,
+                threat_signals: data.threat_signals || [],
+              },
+              risk_score: data.initial_risk !== undefined ? data.initial_risk : prev.risk_score,
+              risk_level: (data.risk_level as any) || prev.risk_level,
+              action: (data.recommended_action as any) || prev.action,
+              call_status: 'RINGING',
+              threat_signals: data.threat_signals || prev.threat_signals,
+            }));
+          } else if (data.event === 'analysis_update') {
+            setTelemetry((prev) => {
+              const deepfakeProb = data.voice_deepfake_pct !== undefined ? data.voice_deepfake_pct : Math.round((data.deepfake_probability || 0) * 100);
+              const speakerScore = data.voice_identity_pct !== undefined ? data.voice_identity_pct : (data.speaker_similarity !== null && data.speaker_similarity !== undefined ? Math.round(data.speaker_similarity * 100) : prev.speaker_match);
+              const livenessScore = data.voice_liveness_pct !== undefined ? data.voice_liveness_pct : Math.round((data.liveness_score || 0.8) * 100);
+              const authenticity = Math.max(0, 100 - deepfakeProb);
+
+              return {
+                ...prev,
+                deepfake_probability: deepfakeProb,
+                voice_authenticity: authenticity,
+                speaker_match: speakerScore,
+                liveness: livenessScore,
+                risk_score: data.risk_score !== undefined ? data.risk_score : prev.risk_score,
+                risk_level: (data.risk_level as any) || prev.risk_level,
+                action: (data.action as any) || prev.action,
+                vad_active: data.voice_activity === 'YES',
+                live_transcript: data.transcript_segment || prev.live_transcript,
+                active_call: prev.active_call ? {
+                  ...prev.active_call,
+                  speaker_verification_status: speakerScore >= 85 ? 'VERIFIED' : (speakerScore < 40 ? 'MISMATCH' : 'ANALYZING'),
+                  deepfake_detection_status: deepfakeProb >= 70 ? 'SYNTHETIC' : 'CLEAN',
+                  liveness_status: livenessScore >= 50 ? 'LIVE' : 'REPLAY',
+                  voice_activity: data.voice_activity,
+                } : null,
+              };
+            });
+          } else if (data.event === 'risk_update') {
+            setTelemetry((prev) => ({
+              ...prev,
+              risk_score: data.risk_score,
+              risk_level: (data.risk_level as any) || prev.risk_level,
+              action: (data.action as any) || prev.action,
+              threat_signals: data.signals || prev.threat_signals,
+            }));
+          } else if (data.event === 'call_terminated') {
+            console.warn('🛑 AUTOMATIC CALL TERMINATION EVENT RECEIVED VIA WEBSOCKET:', data);
+            stopAudioStreaming();
+            setTelemetry((prev) => ({
+              ...prev,
+              call_status: 'TERMINATED',
+              action: 'TERMINATE',
+              risk_level: 'CRITICAL',
+              risk_score: data.risk_score || 100,
+              explanation: `🛑 CALL AUTOMATICALLY TERMINATED: ${data.reason || 'High-confidence synthetic voice attack detected.'}`,
+              threat_signals: [
+                'AUTOMATIC ENFORCEMENT: CALL TERMINATED',
+                ...(data.signals || ['High synthetic probability', 'Speaker mismatch']),
+              ],
+            }));
+          }
+        } catch (e) {
+          // ignore
+        }
+      };
+
+      dws.onclose = () => {
+        setTimeout(connectDashboardWs, 2500);
+      };
+    } catch {
+      setTimeout(connectDashboardWs, 3000);
+    }
+  }, [stopAudioStreaming]);
+
+  // Connect to FastAPI Audio Ingest Stream (/api/v1/stream/ingest)
+  const connect = useCallback(() => {
+    const session = getUserSession();
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const baseTarget = host.includes(':5173')
       ? `${protocol}//127.0.0.1:8000/api/v1/stream/ingest`
       : `${protocol}//${host}/api/v1/stream/ingest`;
+    const wsTarget = `${baseTarget}?user_id=${encodeURIComponent(session.userId)}&device_id=${encodeURIComponent(session.deviceUuid)}`;
 
     setTelemetry((prev) => ({ ...prev, connection_status: 'CONNECTING' }));
 
@@ -76,6 +222,27 @@ export function useVigilWebSocket() {
         const roundtrip = Math.round(performance.now() - lastPingTimeRef.current);
         try {
           const msg = JSON.parse(event.data);
+
+          // Check for call termination signal from audio streamer
+          if (msg.type === 'CALL_TERMINATED' || msg.action === 'TERMINATE' || msg.event === 'call_terminated') {
+            console.warn('🛑 Ingest stream received CALL_TERMINATED! Automatically cutting audio.');
+            stopAudioStreaming();
+            setTelemetry((prev) => ({
+              ...prev,
+              call_status: 'TERMINATED',
+              action: 'TERMINATE',
+              risk_level: 'CRITICAL',
+              risk_score: msg.risk_score || 100,
+              explanation: `🛑 CALL TERMINATED: ${msg.reason || 'High-confidence synthetic voice attack detected.'}`,
+              threat_signals: [
+                'AUTOMATIC ENFORCEMENT: CALL TERMINATED',
+                'High synthetic probability',
+                'Speaker mismatch'
+              ]
+            }));
+            return;
+          }
+
           if (msg.type === 'TELEMETRY' && msg.data) {
             const d = msg.data;
             setTelemetry((prev) => {
@@ -172,14 +339,16 @@ export function useVigilWebSocket() {
       setTelemetry((prev) => ({ ...prev, connection_status: 'DISCONNECTED' }));
       setTimeout(connect, 3000);
     }
-  }, []);
+  }, [stopAudioStreaming]);
 
   useEffect(() => {
     connect();
+    connectDashboardWs();
     return () => {
       wsRef.current?.close();
+      dashboardWsRef.current?.close();
     };
-  }, [connect]);
+  }, [connect, connectDashboardWs]);
 
   // Transmit transcript text to FastAPI backend and update local telemetry
   const sendTranscriptText = useCallback((text: string) => {
@@ -551,8 +720,11 @@ export function useVigilWebSocket() {
     telemetry,
     isStreaming,
     toggleStreaming,
+    stopAudioStreaming,
     sendTranscriptText,
     audioAnalyser: analyserRef.current,
+    latestIncomingCall,
+    setLatestIncomingCall,
     simulateScenario,
     triggerVerifyIdentity,
     triggerChallenge,

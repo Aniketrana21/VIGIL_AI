@@ -43,12 +43,22 @@ async def lifespan(app: FastAPI):
     onnx_info = ONNXStatus.to_dict()
     logger.info(f"ONNX Runtime: {'available' if onnx_info['onnx_active'] else 'not available'}")
 
+    # 6. Warmup Supabase Database Connection Pool
+    from app.db.connection import get_db_pool, close_db_pool
+    try:
+        pool = await get_db_pool()
+        if pool:
+            logger.info("Supabase Cloud Database eagerly connected & healthy.")
+    except Exception as db_err:
+        logger.warning(f"Supabase DB startup warning: {db_err}")
+
     startup_ms = (time.perf_counter() - startup_t0) * 1000.0
     logger.info(f"All models loaded and warmed up in {startup_ms:.0f}ms. Ready for inference.")
 
     yield
 
     logger.info(f"Shutting down {settings.APP_NAME}. Purging remaining resources.")
+    await close_db_pool()
 
 
 app = FastAPI(
@@ -98,9 +108,15 @@ from fastapi.responses import FileResponse
 
 from app.api import speaker
 
+from app.api.v1.endpoints import auth, calls, challenge, conversation, demo, enroll, health, screening, stream, stream_ingest
+
 # Register API v1 routes
 app.include_router(health.router, prefix="/api/v1/health", tags=["Health"])
 app.include_router(health.router, prefix="/health", include_in_schema=False)
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication & Devices"])
+app.include_router(calls.router, prefix="/api/v1/calls", tags=["Calls"])
+app.include_router(calls.router, prefix="/calls", include_in_schema=False)
+app.include_router(calls.ws_router, tags=["Dashboard WebSocket"])
 app.include_router(screening.router, prefix="/api/v1/screening", tags=["Android Screening"])
 app.include_router(enroll.router, prefix="/api/v1/enrollment", tags=["Biometric Enrollment"])
 app.include_router(challenge.router, prefix="/api/v1/challenge", tags=["Challenge-Response"])
@@ -113,6 +129,24 @@ app.include_router(demo.router, prefix="/api/v1/demo", tags=["SIH Demo"])
 @app.get("/ready", include_in_schema=False)
 async def root_ready():
     return await health.readiness_probe()
+
+
+@app.get("/download/apk", tags=["Android Download"])
+async def download_apk():
+    """Directly serves the compiled VIGIL-AI Android APK for easy mobile download over Wi-Fi."""
+    candidates = [
+        Path("C:/Users/ANIKET/.gradle_builds/vigilai/app/outputs/apk/debug/app-debug.apk"),
+        Path(__file__).resolve().parent.parent.parent / "android" / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk",
+    ]
+    for apk_path in candidates:
+        if apk_path.exists():
+            return FileResponse(str(apk_path), media_type="application/vnd.android.package-archive", filename="vigil-ai.apk")
+    return {
+        "status": "not_yet_built",
+        "message": "APK has not been compiled yet.",
+        "searched_paths": [str(p) for p in candidates]
+    }
+
 
 
 # Mount static files for web dashboard

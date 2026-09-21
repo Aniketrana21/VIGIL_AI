@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.vigilai">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- Permissions for Android Telephony Screening (MODE B) and Mic Streaming (MODE A) -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -13,11 +12,11 @@
 
     <application
         android:allowBackup="false"
-        android:icon="@android:drawable/ic_secure"
+        android:icon="@mipmap/ic_launcher"
         android:label="VIGIL-AI"
-        android:roundIcon="@android:drawable/ic_secure"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="true">
 
         <!-- Android MODE B Call Screening Service -->

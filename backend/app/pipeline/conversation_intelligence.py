@@ -50,18 +50,20 @@ class ConversationIntelligenceClassifier:
         r"\b(warn(ing)? (about|against))\b",
     ]
 
-    # Imperative / Directive / Demand verbs and phrases
+    # Imperative / Directive / Demand verbs and phrases (English & Hindi/Hinglish)
     DIRECTIVE_PATTERNS = [
         r"\b(send( me)?|give( me)?|tell( me)?|share|read out|forward|enter|provide|disclose|verify for me)\b",
         r"\b(transfer( to)?|wire( to)?|pay( to)?|deposit)\b",
         r"\b(reset (my|the)|bypass|unlock|grant( me)?)\b",
+        r"\b(bhejo|de do|de|batao|share karo|transfer karo|daalo|daal do|send karo|bolo|likho|enter karo|padh ke batao|dijiye|batayein)\b",
     ]
 
-    # Urgency & Coercion triggers
+    # Urgency & Coercion triggers (English & Hindi/Hinglish)
     URGENCY_PATTERNS = [
         r"\b(urgently|immediately|right now|asap|fast|hurry|quick|within \d+ minutes)\b",
         r"\b(hospital|police|accident|jail|arrest|emergency|life or death|kidnap)\b",
         r"\b(account (is|will be) (blocked|suspended|frozen|locked|terminated))\b",
+        r"\b(turant|jaldi|jaldi karo|abhi ke abhi|fauran|jail|police|thana|accident|hospital|giraftaar|digital arrest|cbi|crime branch|customs|illegal courier|drugs|khata band|account block|paisa phasa)\b",
     ]
 
     MODEL_NAME = "Whisper Contextual Intent Classifier"
@@ -155,48 +157,48 @@ class ConversationIntelligenceClassifier:
 
         has_urgency = self._has_urgency(lower)
 
-        # 3. Target Intent: OTP Request
-        if re.search(r"\b(otp|one time password|verification code|security code|6 digit code|sms code)\b", lower):
+        # 3. Target Intent: OTP Request (Multilingual English & Hindi/Hinglish)
+        if re.search(r"\b(otp|one time password|verification code|security code|6 digit code|sms code|code batao|otp batao|otp bhejo|otp do|otp bolo|sms wala code)\b", lower):
             if any(re.search(d, lower) for d in self.DIRECTIVE_PATTERNS) or not lower.endswith("?"):
                 risk = 0.95 if has_urgency else 0.90
                 latency_ms = (time.perf_counter() - t0) * 1000.0
                 return ConversationIntelligenceResult(
                     intent=CallerIntent.OTP_REQUEST.value,
                     risk_signal=risk,
-                    evidence="direct imperative request or demand to disclose one-time authentication passcode (OTP)",
+                    evidence="direct imperative request or demand to disclose one-time authentication passcode (OTP / OTP batao)",
                     transcript=clean,
                     latency_ms=latency_ms,
                 )
 
-        # 4. Target Intent: UPI Request
-        if re.search(r"\b(upi|gpay|google pay|phonepe|paytm|bhim|@upi|@okhdfcbank|@okaxis|@ybl|vpa)\b", lower):
-            if any(re.search(d, lower) for d in self.DIRECTIVE_PATTERNS) or re.search(r"\b(pay|send|transfer|scan)\b", lower):
+        # 4. Target Intent: UPI Request (Multilingual English & Hindi/Hinglish)
+        if re.search(r"\b(upi|gpay|google pay|phonepe|paytm|bhim|@upi|@okhdfcbank|@okaxis|@ybl|vpa|paise bhejo|paisa transfer|rupaye bhejo|paisa daalo|qr code scan|scan karo|paise daal do)\b", lower):
+            if any(re.search(d, lower) for d in self.DIRECTIVE_PATTERNS) or re.search(r"\b(pay|send|transfer|scan|bhejo|daalo)\b", lower):
                 risk = 0.93 if has_urgency else 0.88
                 latency_ms = (time.perf_counter() - t0) * 1000.0
                 return ConversationIntelligenceResult(
                     intent=CallerIntent.UPI_REQUEST.value,
                     risk_signal=risk,
-                    evidence="solicitation of direct UPI / QR code payment transfer to an external address",
+                    evidence="solicitation of direct UPI / QR code payment transfer (Paisa transfer / UPI request)",
                     transcript=clean,
                     latency_ms=latency_ms,
                 )
 
-        # 5. Target Intent: Emergency Money Request
-        is_true_emergency = bool(re.search(r"\b(hospital|accident|police|bail|arrest|jail|kidnap|life or death)\b", lower))
-        is_family_distress = bool(re.search(r"\b(mom|dad|son|daughter|grandma|grandpa)\b", lower)) and (is_true_emergency or bool(re.search(r"\b(urgent|urgently|emergency)\b", lower)))
+        # 5. Target Intent: Emergency Money Request & Digital Arrest Impersonation
+        is_true_emergency = bool(re.search(r"\b(hospital|accident|police|bail|arrest|jail|kidnap|life or death|police station|thana|accident ho gaya|jail me hu|giraftaar|bacha lo|bail ke liye|digital arrest|cbi officer|customs officer|mumbai police|delhi police|narcotics|parcel me drugs)\b", lower))
+        is_family_distress = bool(re.search(r"\b(mom|dad|son|daughter|grandma|grandpa|papa|mummy|bhai|behan|chacha|mama|dost)\b", lower)) and (is_true_emergency or bool(re.search(r"\b(urgent|urgently|emergency|jaldi|turant)\b", lower)))
         if is_true_emergency or is_family_distress:
-            if re.search(r"\b(money|cash|funds|wire|transfer|rupees|dollars|send|pay|help)\b", lower):
+            if re.search(r"\b(money|cash|funds|wire|transfer|rupees|dollars|send|pay|help|paise|rupaye|paisa|madad)\b", lower) or "digital arrest" in lower or "parcel me drugs" in lower:
                 latency_ms = (time.perf_counter() - t0) * 1000.0
                 return ConversationIntelligenceResult(
                     intent=CallerIntent.EMERGENCY_MONEY_REQUEST.value,
                     risk_signal=0.96,
-                    evidence="high-pressure emergency family distress impersonation requesting immediate funds",
+                    evidence="high-pressure emergency family distress or law enforcement impersonation extortion (Accident / Police / Digital Arrest scam)",
                     transcript=clean,
                     latency_ms=latency_ms,
                 )
 
         # 6. Target Intent: Account Takeover Attempt
-        if re.search(r"\b(account takeover|bypass 2fa|take over|reset (my|the|an) password|change (the|my) email|change (the|my) phone|sim swap|transfer (the|my) number|disable 2fa)\b", lower):
+        if re.search(r"\b(account takeover|bypass 2fa|take over|reset (my|the|an) password|change (the|my) email|change (the|my) phone|sim swap|transfer (the|my) number|disable 2fa|khata band|account block|sim band)\b", lower):
             risk = 0.95 if has_urgency else 0.92
             latency_ms = (time.perf_counter() - t0) * 1000.0
             return ConversationIntelligenceResult(
@@ -207,28 +209,28 @@ class ConversationIntelligenceClassifier:
                 latency_ms=latency_ms,
             )
 
-        # 7. Target Intent: Password / PIN Request
-        if re.search(r"\b(password|passcode|pin|netbanking pin|atm pin|login credentials)\b", lower):
+        # 7. Target Intent: Password / PIN Request (Multilingual)
+        if re.search(r"\b(password|passcode|pin|netbanking pin|atm pin|login credentials|atm ka pin|pin batao|password batao|login id batao)\b", lower):
             if any(re.search(d, lower) for d in self.DIRECTIVE_PATTERNS) or not lower.endswith("?"):
                 risk = 0.96 if has_urgency else 0.92
                 latency_ms = (time.perf_counter() - t0) * 1000.0
                 return ConversationIntelligenceResult(
                     intent=CallerIntent.PASSWORD_REQUEST.value,
                     risk_signal=risk,
-                    evidence="direct request to disclose password or PIN credentials",
+                    evidence="direct request to disclose password or PIN credentials (PIN / Password batao)",
                     transcript=clean,
                     latency_ms=latency_ms,
                 )
 
-        # 8. Target Intent: Bank Credential Request
-        if re.search(r"\b(cvv|cvv2|card number|debit card|credit card|16 digit|expiry date|bank account number|ifsc)\b", lower):
+        # 8. Target Intent: Bank Credential Request (Multilingual)
+        if re.search(r"\b(cvv|cvv2|card number|debit card|credit card|16 digit|expiry date|bank account number|ifsc|aadhar card|pan card link|kyc update|khata update)\b", lower):
             if any(re.search(d, lower) for d in self.DIRECTIVE_PATTERNS) or not lower.endswith("?"):
                 risk = 0.95 if has_urgency else 0.90
                 latency_ms = (time.perf_counter() - t0) * 1000.0
                 return ConversationIntelligenceResult(
                     intent=CallerIntent.BANK_CREDENTIAL_REQUEST.value,
                     risk_signal=risk,
-                    evidence="solicitation of sensitive payment card or banking account credentials",
+                    evidence="solicitation of sensitive payment card or banking account credentials (CVV / Aadhar / Bank details)",
                     transcript=clean,
                     latency_ms=latency_ms,
                 )

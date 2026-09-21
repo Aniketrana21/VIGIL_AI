@@ -82,6 +82,7 @@ class StreamingSessionManager:
         self.last_deepfake_result: Optional[DetectionResult] = None
         self.last_speaker_result: Optional[SpeakerVerificationResult] = None
         self.last_liveness_result: Optional[LivenessResult] = None
+        self.last_conversation_result: Optional[Any] = None
         self.last_risk_result: Optional[RiskEvaluationResult] = None
         self.deepfake_timeline: List[Dict[str, Any]] = []
 

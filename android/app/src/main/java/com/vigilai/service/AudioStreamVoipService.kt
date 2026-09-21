@@ -35,7 +35,7 @@ class AudioStreamVoipService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val serverWsUrl = intent?.getStringExtra("EXTRA_WS_URL") ?: "ws://10.0.2.2:8000/api/v1/stream/ws"
+        val serverWsUrl = intent?.getStringExtra("EXTRA_WS_URL") ?: "ws://10.233.185.235:8000/api/v1/stream/ingest"
         startStreaming(serverWsUrl)
         return START_STICKY
     }
@@ -46,7 +46,12 @@ class AudioStreamVoipService : Service() {
 
         scope.launch {
             try {
-                // Connect WebSocket
+                // Connect WebSocket and wire automatic termination handler
+                VigilWebSocketClient.onTerminationRequested = {
+                    Log.w(TAG, "AudioStreamVoipService: Enforcing immediate call termination due to critical fraud threat verdict!")
+                    stopRecording()
+                    stopSelf()
+                }
                 VigilWebSocketClient.connect(serverWsUrl)
 
                 audioRecord = AudioRecord(

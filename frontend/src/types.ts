@@ -2,7 +2,7 @@ export interface SecurityTelemetry {
   session_id?: string;
   policy_version?: string;
   connection_status: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING';
-  call_status: 'MONITORING' | 'CHALLENGING' | 'WARNED' | 'BLOCKED';
+  call_status: 'MONITORING' | 'CHALLENGING' | 'WARNED' | 'BLOCKED' | 'TERMINATED' | 'RINGING';
   
   // Center Gauges
   voice_authenticity: number; // 0 - 100
@@ -11,7 +11,7 @@ export interface SecurityTelemetry {
   deepfake_probability: number; // 0 - 100
   risk_score: number;          // 0 - 100
   risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-  action: 'ALLOW' | 'MONITOR' | 'CHALLENGE' | 'WARN' | 'BLOCK';
+  action: 'ALLOW' | 'MONITOR' | 'CHALLENGE' | 'WARN' | 'BLOCK' | 'TERMINATE' | 'SILENCE';
   confidence: number;          // 0 - 1
 
   // Meta & Telemetry
@@ -41,6 +41,8 @@ export interface SecurityTelemetry {
     transcript?: string;
   } | null;
   live_transcript?: string;
+  explanation?: string;
+  waveform_sample?: number[];
 
   // Adaptive Challenge
   active_challenge?: {
@@ -55,8 +57,32 @@ export interface SecurityTelemetry {
   demo_scenario_id?: number;
   defense_stage?: 'DETECT' | 'VERIFY' | 'UNDERSTAND' | 'CHALLENGE' | 'PREVENT' | 'ALLOW';
   audio_chunks_processed?: number;
-  waveform_sample?: number[];
-  explanation?: string;
+  // Active Call Details
+  active_call?: {
+    call_id: string;
+    phone_number: string;
+    normalized_phone_number?: string;
+    masked_phone: string;
+    caller_name: string;
+    company?: string | null;
+    company_verification_status?: string;
+    contact_known: boolean;
+    caller_type?: string;
+    previous_calls: number;
+    calls_today: number;
+    last_call_timestamp?: string;
+    initial_risk?: number;
+    risk_level?: string;
+    recommended_action?: string;
+    speaker_verification_status: 'WAITING' | 'ANALYZING' | 'VERIFIED' | 'MISMATCH';
+    deepfake_detection_status: 'WAITING' | 'ANALYZING' | 'CLEAN' | 'SYNTHETIC';
+    liveness_status: 'WAITING' | 'ANALYZING' | 'LIVE' | 'REPLAY';
+    voice_activity?: string;
+    cellular_audio_available: boolean;
+    call_transport?: string;
+    timestamp?: string;
+    threat_signals?: string[];
+  } | null;
 }
 
 export interface SIHScenarioMeta {

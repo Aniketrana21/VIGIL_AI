@@ -2,14 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Mic, Radio, Send } from 'lucide-react';
 
 interface CenterPanelProps {
-  callStatus: 'MONITORING' | 'CHALLENGING' | 'WARNED' | 'BLOCKED';
+  callStatus: 'MONITORING' | 'CHALLENGING' | 'WARNED' | 'BLOCKED' | 'TERMINATED' | 'RINGING';
   voiceAuthenticity: number;
   speakerMatch: number;
   liveness: number;
   deepfakeProbability: number;
   riskScore: number;
   riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-  action: 'ALLOW' | 'MONITOR' | 'CHALLENGE' | 'WARN' | 'BLOCK';
+  action: 'ALLOW' | 'MONITOR' | 'CHALLENGE' | 'WARN' | 'BLOCK' | 'TERMINATE' | 'SILENCE';
   confidence: number;
   vadActive: boolean;
   isStreaming: boolean;
@@ -19,6 +19,7 @@ interface CenterPanelProps {
   explanation?: string;
   callerTranscript?: string;
   onSendTranscript?: (text: string) => void;
+  activeCall?: any;
 }
 
 // Generate ASCII bar block (e.g. ████████████░ 91%)
@@ -47,6 +48,7 @@ export const CenterPanel: React.FC<CenterPanelProps> = ({
   explanation,
   callerTranscript,
   onSendTranscript,
+  activeCall,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [inputText, setInputText] = useState('');
@@ -163,25 +165,61 @@ export const CenterPanel: React.FC<CenterPanelProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
         <div>
           <span className="text-[11px] font-mono uppercase tracking-widest text-slate-400 font-semibold block mb-1">
-            CALL STATUS
+            CALL STATUS &amp; PIPELINE
           </span>
           <div className="flex items-center gap-3">
             <span className="flex h-3.5 w-3.5 relative">
               <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                callStatus === 'BLOCKED' ? 'bg-rose-500' : callStatus === 'CHALLENGING' ? 'bg-amber-400' : 'bg-emerald-400'
+                callStatus === 'TERMINATED' || callStatus === 'BLOCKED'
+                  ? 'bg-rose-500'
+                  : callStatus === 'RINGING'
+                  ? 'bg-cyan-400'
+                  : callStatus === 'CHALLENGING'
+                  ? 'bg-amber-400'
+                  : 'bg-emerald-400'
               }`} />
               <span className={`relative inline-flex rounded-full h-3.5 w-3.5 ${
-                callStatus === 'BLOCKED' ? 'bg-rose-500' : callStatus === 'CHALLENGING' ? 'bg-amber-500' : 'bg-emerald-500'
+                callStatus === 'TERMINATED' || callStatus === 'BLOCKED'
+                  ? 'bg-rose-500'
+                  : callStatus === 'RINGING'
+                  ? 'bg-cyan-500'
+                  : callStatus === 'CHALLENGING'
+                  ? 'bg-amber-500'
+                  : 'bg-emerald-500'
               }`} />
             </span>
-            <span className="text-xl font-black font-mono tracking-wider text-white">
-              {callStatus}
+            <span className={`text-xl font-black font-mono tracking-wider ${
+              callStatus === 'TERMINATED' ? 'text-rose-400 animate-pulse' : 'text-white'
+            }`}>
+              {callStatus === 'TERMINATED' ? 'CALL TERMINATED' : callStatus}
             </span>
+            {callStatus === 'TERMINATED' && (
+              <span className="px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 text-[10px] font-mono font-bold">
+                AUTO-ENFORCED
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Streaming Mic Control */}
-        <div className="flex items-center gap-3">
+        {/* Live Audio Status & Streaming Mic Control */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 text-[10px] font-mono bg-slate-900/80 border border-slate-800 px-3 py-1.5 rounded-lg">
+            <span className="text-slate-400">Audio:</span>
+            <span className={`font-bold ${isStreaming ? 'text-emerald-400' : 'text-slate-500'}`}>
+              {isStreaming ? 'DETECTED' : 'STANDBY'}
+            </span>
+            <span className="text-slate-700">|</span>
+            <span className="text-slate-400">VAD:</span>
+            <span className={`font-bold ${vadActive ? 'text-cyan-400 animate-pulse' : 'text-slate-500'}`}>
+              {vadActive ? 'ACTIVE' : 'IDLE'}
+            </span>
+            <span className="text-slate-700">|</span>
+            <span className="text-slate-400">Quality:</span>
+            <span className={`font-bold ${isStreaming ? (vadActive ? 'text-emerald-400' : 'text-slate-400') : 'text-slate-500'}`}>
+              {isStreaming ? (vadActive ? 'HIGH' : 'STABLE') : 'OFF'}
+            </span>
+          </div>
+
           <button
             onClick={onToggleStream}
             className={`px-4 py-2 rounded-lg font-mono text-xs font-bold tracking-wider flex items-center gap-2 border transition-all cursor-pointer ${
@@ -194,6 +232,29 @@ export const CenterPanel: React.FC<CenterPanelProps> = ({
             <span>{isStreaming ? 'STOP MICROPHONE' : 'START MICROPHONE'}</span>
           </button>
         </div>
+      </div>
+
+      {/* Platform Capabilities & Invariants Notice */}
+      <div className="p-2.5 rounded-xl bg-slate-900/70 border border-slate-800 text-[11px] font-mono flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 text-slate-300">
+          <span className="text-cyan-400 font-bold">PLATFORM CAPABILITY:</span>
+          {isStreaming ? (
+            <span className="text-emerald-400 flex items-center gap-1 font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+              Path B (VoIP / WebRTC / Mic): Live 2–4s Voice Streaming &amp; Auto-Termination Active
+            </span>
+          ) : (
+            <span className="text-amber-300/90 flex items-center gap-1 font-semibold">
+              <span>🛡️ Path A (Cellular): Pre-Call Screening Active (Telecom Mode B) — In-call audio monitoring restricted by Android OS sandbox</span>
+            </span>
+          )}
+        </div>
+        {activeCall && (
+          <div className="text-[10px] text-slate-400 flex items-center gap-2">
+            <span>Caller: <strong className="text-white">{activeCall.caller_name || activeCall.masked_phone}</strong></span>
+            <span className="px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300">{activeCall.call_transport || 'CELLULAR'}</span>
+          </div>
+        )}
       </div>
 
       {/* CORE SOC GAUGES (VOICE AUTHENTICITY, SPEAKER MATCH, LIVENESS, DEEPFAKE, RISK) */}
@@ -295,9 +356,9 @@ export const CenterPanel: React.FC<CenterPanelProps> = ({
           <div className="text-right">
             <span className="text-slate-400 block text-[11px]">RECOMMENDED ACTION</span>
             <span className={`font-bold tracking-wider text-sm ${
-              action === 'BLOCK' ? 'text-rose-400' : action === 'WARN' ? 'text-amber-400' : action === 'CHALLENGE' ? 'text-purple-400' : 'text-emerald-400'
+              action === 'TERMINATE' ? 'text-rose-500 font-black animate-pulse' : action === 'BLOCK' ? 'text-rose-400 font-black' : action === 'WARN' ? 'text-amber-400' : action === 'CHALLENGE' ? 'text-purple-400' : 'text-emerald-400'
             }`}>
-              {action}
+              {action === 'TERMINATE' ? 'TERMINATE (AUTO CUT)' : action}
             </span>
           </div>
           <div className="h-8 w-px bg-slate-800" />
@@ -375,20 +436,37 @@ export const CenterPanel: React.FC<CenterPanelProps> = ({
         </form>
 
         <div className="flex flex-wrap items-center gap-1.5 mt-2">
-          <span className="text-[10px] text-slate-500 font-sans font-medium">Quick Verify:</span>
+          <span className="text-[10px] text-slate-500 font-sans font-medium">Multilingual Quick Verify:</span>
+          <button
+            type="button"
+            onClick={() => onSendTranscript?.("OTP batao jaldi, account block ho jayega")}
+            className="text-[10px] px-2 py-0.5 rounded bg-rose-950/60 hover:bg-rose-900 border border-rose-800/60 text-rose-300 font-mono transition"
+            title="Hindi/Hinglish OTP scam test"
+          >
+            🇮🇳 Hindi OTP Scam
+          </button>
+          <button
+            type="button"
+            onClick={() => onSendTranscript?.("CBI officer bol raha hu, parcel me drugs mile hai, digital arrest")}
+            className="text-[10px] px-2 py-0.5 rounded bg-red-950/70 hover:bg-red-900 border border-red-800 text-red-300 font-mono transition"
+            title="Digital Arrest extortion test"
+          >
+            🇮🇳 Digital Arrest
+          </button>
+          <button
+            type="button"
+            onClick={() => onSendTranscript?.("Police station me hu, accident ho gaya, turant paise bhejo")}
+            className="text-[10px] px-2 py-0.5 rounded bg-amber-950/60 hover:bg-amber-900 border border-amber-800/60 text-amber-300 font-mono transition"
+            title="Hinglish emergency distress test"
+          >
+            ⚠️ Hinglish Emergency
+          </button>
           <button
             type="button"
             onClick={() => onSendTranscript?.("This is bank security, read the 6-digit OTP code sent to your phone immediately")}
             className="text-[10px] px-2 py-0.5 rounded bg-rose-950/60 hover:bg-rose-900 border border-rose-800/60 text-rose-300 font-mono transition"
           >
             🚨 Bank OTP Scam
-          </button>
-          <button
-            type="button"
-            onClick={() => onSendTranscript?.("Urgent: Police emergency, wire transfer 50,000 rupees right now")}
-            className="text-[10px] px-2 py-0.5 rounded bg-amber-950/60 hover:bg-amber-900 border border-amber-800/60 text-amber-300 font-mono transition"
-          >
-            ⚠️ Emergency Wire Fraud
           </button>
           <button
             type="button"

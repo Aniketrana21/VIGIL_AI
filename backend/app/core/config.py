@@ -98,10 +98,21 @@ class Settings(BaseSettings):
     REDIS_URL: Optional[str] = "redis://localhost:6379/0"
     MODEL_SERVICE_URL: Optional[str] = None  # URL for dedicated model microservice (e.g. http://model-service:8001)
 
+    # Supabase Cloud Database Configuration
+    SUPABASE_URL: Optional[str] = "https://rxtisiznzwzkwzmfgojf.supabase.co"
+    SUPABASE_KEY: Optional[str] = "sb_publishable_2GTkd0E0FIb3mtWIRUdLxg_cizITQwh"
+    SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
+    SUPABASE_DB_URL: Optional[str] = None
+    DETECTION_STORE_BACKEND: str = "supabase"  # "supabase" | "postgres" | "sqlite"
+
     # Phase 16: Model Version & Policy Defaults
     POLICY_VERSION: str = "2026.09.1-production"
     WHISPER_MODEL_SIZE: str = "base"
     VAD_MODEL_CHECKPOINT: Optional[str] = None
+
+    @property
+    def is_supabase_configured(self) -> bool:
+        return bool(self.SUPABASE_URL and self.SUPABASE_KEY)
 
     @property
     def window_samples(self) -> int:

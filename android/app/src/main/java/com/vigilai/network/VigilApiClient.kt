@@ -30,7 +30,7 @@ object VigilApiClient : ScreeningRemoteClient {
         .readTimeout(3, TimeUnit.SECONDS)
         .build()
 
-    var backendBaseUrl = "http://10.0.2.2:8000" // Android emulator default gateway
+    var backendBaseUrl = "http://10.233.185.235:8000" // User local Wi-Fi IP
     var apiKey = "vigil-ai-hackathon-demo-key-2026"
 
     override suspend fun queryRisk(
@@ -109,6 +109,7 @@ object VigilApiClient : ScreeningRemoteClient {
 object VigilWebSocketClient {
     private var webSocket: WebSocket? = null
     private val client = OkHttpClient.Builder().build()
+    var onTerminationRequested: (() -> Unit)? = null
 
     fun connect(wsUrl: String) {
         val request = Request.Builder().url(wsUrl).build()
@@ -119,6 +120,21 @@ object VigilWebSocketClient {
 
             override fun onMessage(ws: WebSocket, text: String) {
                 Log.d("VigilWebSocket", "Verdict received: $text")
+                try {
+                    val json = org.json.JSONObject(text)
+                    val action = json.optString("action")
+                    val type = json.optString("type")
+                    val event = json.optString("event")
+                    if (action.equals("TERMINATE", ignoreCase = true) ||
+                        action.equals("BLOCK", ignoreCase = true) ||
+                        type.equals("CALL_TERMINATED", ignoreCase = true) ||
+                        event.equals("call_terminated", ignoreCase = true)) {
+                        Log.w("VigilWebSocket", "🛑 Critical fraud threat verdict received: Enforcing automatic call termination!")
+                        onTerminationRequested?.invoke()
+                    }
+                } catch (e: Exception) {
+                    // non-fatal parse error
+                }
             }
 
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
@@ -134,5 +150,6 @@ object VigilWebSocketClient {
     fun disconnect() {
         webSocket?.close(1000, "Service stopped")
         webSocket = null
+        onTerminationRequested = null
     }
 }

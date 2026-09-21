@@ -277,10 +277,17 @@ class PostgresVectorEmbeddingStore(EmbeddingStore):
             )
             if not row:
                 return None
+            def _to_float_list(v: Any) -> List[float]:
+                if hasattr(v, "to_list"):
+                    return [float(x) for x in v.to_list()]
+                if hasattr(v, "tolist"):
+                    return [float(x) for x in v.tolist()]
+                return [float(x) for x in list(v)]
+
             return SpeakerProfile(
                 speaker_id=row["speaker_id"],
                 name=row["name"],
-                embedding=list(row["embedding"]),
+                embedding=_to_float_list(row["embedding"]),
                 num_utterances=row["num_utterances"],
                 created_at=row["created_at"].isoformat(),
                 metadata=json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"],
@@ -292,11 +299,18 @@ class PostgresVectorEmbeddingStore(EmbeddingStore):
         async with self.pool.acquire() as conn:
             await register_vector(conn)
             rows = await conn.fetch("SELECT speaker_id, name, embedding, num_utterances, created_at, metadata FROM speaker_profiles;")
+            def _to_float_list(v: Any) -> List[float]:
+                if hasattr(v, "to_list"):
+                    return [float(x) for x in v.to_list()]
+                if hasattr(v, "tolist"):
+                    return [float(x) for x in v.tolist()]
+                return [float(x) for x in list(v)]
+
             return [
                 SpeakerProfile(
                     speaker_id=r["speaker_id"],
                     name=r["name"],
-                    embedding=list(r["embedding"]),
+                    embedding=_to_float_list(r["embedding"]),
                     num_utterances=r["num_utterances"],
                     created_at=r["created_at"].isoformat(),
                     metadata=json.loads(r["metadata"]) if isinstance(r["metadata"], str) else r["metadata"],
@@ -322,12 +336,19 @@ class PostgresVectorEmbeddingStore(EmbeddingStore):
                 LIMIT $2;
             """
             rows = await conn.fetch(query, q, top_k)
+            def _to_float_list(v: Any) -> List[float]:
+                if hasattr(v, "to_list"):
+                    return [float(x) for x in v.to_list()]
+                if hasattr(v, "tolist"):
+                    return [float(x) for x in v.tolist()]
+                return [float(x) for x in list(v)]
+
             results = []
             for r in rows:
                 profile = SpeakerProfile(
                     speaker_id=r["speaker_id"],
                     name=r["name"],
-                    embedding=list(r["embedding"]),
+                    embedding=_to_float_list(r["embedding"]),
                     num_utterances=r["num_utterances"],
                     created_at=r["created_at"].isoformat(),
                     metadata=json.loads(r["metadata"]) if isinstance(r["metadata"], str) else r["metadata"],

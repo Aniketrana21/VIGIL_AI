@@ -22,6 +22,12 @@ try:
 except ImportError:
     POSTGRES_AVAILABLE = False
 
+try:
+    import httpx
+    HTTPX_AVAILABLE = True
+except ImportError:
+    HTTPX_AVAILABLE = False
+
 
 @dataclass
 class DetectionEvent:
@@ -475,6 +481,279 @@ class SQLiteDetectionStore(DetectionStore):
 
 
 
+
+class SupabaseDetectionStore(DetectionStore):
+    """
+    High-performance Supabase cloud detection persistence store.
+    Directly communicates with Supabase PostgREST endpoints using connection pooling.
+    Falls back gracefully to SQLite if the remote table has not yet been migrated or during offline use.
+    """
+    def __init__(
+        self,
+        url: Optional[str] = None,
+        key: Optional[str] = None,
+        fallback_db_path: Optional[str] = None
+    ):
+        self.url = (url or getattr(settings, "SUPABASE_URL", "")).rstrip("/")
+        self.key = key or getattr(settings, "SUPABASE_KEY", "")
+        self.fallback_store = SQLiteDetectionStore(db_path=fallback_db_path or "vigil_detections.db")
+        self._rest_endpoint = f"{self.url}/rest/v1/detection_events" if self.url else ""
+        self._headers = {
+            "apikey": self.key,
+            "Authorization": f"Bearer {self.key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+        }
+        self._client: Optional[Any] = None
+        self._lock = threading.Lock()
+        self._table_available: Optional[bool] = None
+
+    def _get_client(self) -> Any:
+        if not HTTPX_AVAILABLE:
+            return None
+        if self._client is None or self._client.is_closed:
+            limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
+            self._client = httpx.AsyncClient(headers=self._headers, timeout=5.0, limits=limits)
+        return self._client
+
+    async def initialize(self) -> None:
+        if hasattr(self.fallback_store, "initialize"):
+            init_fn = getattr(self.fallback_store, "initialize")
+            if asyncio.iscoroutinefunction(init_fn):
+                await init_fn()
+            else:
+                init_fn()
+        if not self.url or not self.key or not HTTPX_AVAILABLE:
+            logger.info("Supabase credentials not set or httpx missing. Using SQLite fallback.")
+            self._table_available = False
+            return
+
+        try:
+            client = self._get_client()
+            resp = await client.get(f"{self._rest_endpoint}?limit=1")
+            if resp.status_code == 200:
+                self._table_available = True
+                logger.info(f"Connected to Supabase Detection Events table at {self.url}.")
+            elif resp.status_code == 404:
+                self._table_available = False
+                logger.warning(
+                    f"Supabase connected, but 'detection_events' table not found (HTTP 404). "
+                    f"Please run docs/supabase_schema.sql in the Supabase SQL Editor. Using local SQLite fallback."
+                )
+            else:
+                self._table_available = False
+                logger.warning(f"Supabase health probe returned HTTP {resp.status_code}. Using local SQLite fallback.")
+        except Exception as e:
+            self._table_available = False
+            logger.warning(f"Supabase connection probe failed ({e}). Using local SQLite fallback.")
+
+    async def store_detection(self, event: DetectionEvent) -> bool:
+        # Always write to local fallback store for redundancy & instant sync retrieval
+        self.fallback_store.store_detection_sync(event)
+
+        if not self.url or not self.key or not HTTPX_AVAILABLE or self._table_available is False:
+            return True
+
+        payload = {
+            "session_id": event.session_id,
+            "timestamp": event.timestamp,
+            "deepfake_score": event.deepfake_score,
+            "deepfake_label": event.deepfake_label,
+            "speaker_id": event.speaker_id,
+            "speaker_similarity": event.speaker_similarity,
+            "liveness_score": event.liveness_score,
+            "replay_probability": event.replay_probability,
+            "conversation_intent": event.conversation_intent,
+            "conversation_risk": event.conversation_risk,
+            "risk_score": event.risk_score,
+            "risk_level": event.risk_level,
+            "action": event.action,
+            "confidence": event.confidence,
+            "signals": event.signals,
+            "contributing_signals": event.contributing_signals,
+            "explanation": event.explanation,
+            "caller_id": event.caller_id,
+            "transcript": event.transcript,
+            "metadata": event.metadata,
+        }
+
+        try:
+            client = self._get_client()
+            resp = await client.post(self._rest_endpoint, json=payload)
+            if resp.status_code in (200, 201):
+                data = resp.json()
+                if isinstance(data, list) and len(data) > 0 and "id" in data[0]:
+                    event.id = data[0]["id"]
+                self._table_available = True
+                return True
+            elif resp.status_code == 404:
+                self._table_available = False
+                logger.warning("detection_events table not created in Supabase yet. Event saved to local SQLite.")
+            else:
+                logger.warning(f"Supabase store_detection returned HTTP {resp.status_code}: {resp.text[:120]}")
+        except Exception as e:
+            logger.warning(f"Failed to post detection event to Supabase ({e}). Event saved to local SQLite.")
+        return True
+
+    def store_detection_sync(self, event: DetectionEvent) -> bool:
+        self.fallback_store.store_detection_sync(event)
+        if not self.url or not self.key or not HTTPX_AVAILABLE or self._table_available is False:
+            return True
+        try:
+            payload = {
+                "session_id": event.session_id,
+                "timestamp": event.timestamp,
+                "deepfake_score": event.deepfake_score,
+                "deepfake_label": event.deepfake_label,
+                "speaker_id": event.speaker_id,
+                "speaker_similarity": event.speaker_similarity,
+                "liveness_score": event.liveness_score,
+                "replay_probability": event.replay_probability,
+                "conversation_intent": event.conversation_intent,
+                "conversation_risk": event.conversation_risk,
+                "risk_score": event.risk_score,
+                "risk_level": event.risk_level,
+                "action": event.action,
+                "confidence": event.confidence,
+                "signals": event.signals,
+                "contributing_signals": event.contributing_signals,
+                "explanation": event.explanation,
+                "caller_id": event.caller_id,
+                "transcript": event.transcript,
+                "metadata": event.metadata,
+            }
+            resp = httpx.post(self._rest_endpoint, json=payload, headers=self._headers, timeout=3.0)
+            if resp.status_code in (200, 201):
+                data = resp.json()
+                if isinstance(data, list) and len(data) > 0 and "id" in data[0]:
+                    event.id = data[0]["id"]
+                return True
+        except Exception:
+            pass
+        return True
+
+    async def get_detections(self, session_id: Optional[str] = None, limit: int = 50) -> List[DetectionEvent]:
+        if not self.url or not self.key or not HTTPX_AVAILABLE or self._table_available is False:
+            return await self.fallback_store.get_detections(session_id, limit)
+
+        try:
+            client = self._get_client()
+            params = {
+                "select": "*",
+                "order": "timestamp.desc",
+                "limit": str(limit),
+            }
+            if session_id:
+                params["session_id"] = f"eq.{session_id}"
+
+            resp = await client.get(self._rest_endpoint, params=params)
+            if resp.status_code == 200:
+                rows = resp.json()
+                results = []
+                for r in rows:
+                    signals = r.get("signals")
+                    if isinstance(signals, str):
+                        signals = json.loads(signals)
+                    contrib = r.get("contributing_signals")
+                    if isinstance(contrib, str):
+                        contrib = json.loads(contrib)
+                    meta = r.get("metadata")
+                    if isinstance(meta, str):
+                        meta = json.loads(meta)
+                    results.append(DetectionEvent(
+                        id=r.get("id"),
+                        session_id=r.get("session_id", ""),
+                        timestamp=r.get("timestamp", ""),
+                        deepfake_score=r.get("deepfake_score"),
+                        deepfake_label=r.get("deepfake_label"),
+                        speaker_id=r.get("speaker_id"),
+                        speaker_similarity=r.get("speaker_similarity"),
+                        liveness_score=r.get("liveness_score"),
+                        replay_probability=r.get("replay_probability"),
+                        conversation_intent=r.get("conversation_intent"),
+                        conversation_risk=r.get("conversation_risk"),
+                        risk_score=r.get("risk_score", 0),
+                        risk_level=r.get("risk_level", "ALLOW"),
+                        action=r.get("action", "ALLOW"),
+                        confidence=r.get("confidence", 1.0),
+                        signals=signals or [],
+                        contributing_signals=contrib or [],
+                        explanation=r.get("explanation", ""),
+                        caller_id=r.get("caller_id"),
+                        transcript=r.get("transcript"),
+                        metadata=meta or {},
+                    ))
+                return results
+        except Exception as e:
+            logger.warning(f"Failed to query Supabase ({e}). Using SQLite fallback.")
+        return await self.fallback_store.get_detections(session_id, limit)
+
+    def get_detections_sync(self, session_id: Optional[str] = None, limit: int = 50) -> List[DetectionEvent]:
+        # Quick check fallback store first
+        local_records = self.fallback_store.get_detections_sync(session_id, limit)
+        if local_records:
+            return local_records
+
+        if not self.url or not self.key or not HTTPX_AVAILABLE or self._table_available is False:
+            return local_records
+
+        try:
+            params = {"select": "*", "order": "timestamp.desc", "limit": str(limit)}
+            if session_id:
+                params["session_id"] = f"eq.{session_id}"
+            resp = httpx.get(self._rest_endpoint, headers=self._headers, params=params, timeout=3.0)
+            if resp.status_code == 200:
+                rows = resp.json()
+                results = []
+                for r in rows:
+                    results.append(DetectionEvent(
+                        id=r.get("id"),
+                        session_id=r.get("session_id", ""),
+                        timestamp=r.get("timestamp", ""),
+                        deepfake_score=r.get("deepfake_score"),
+                        deepfake_label=r.get("deepfake_label"),
+                        speaker_id=r.get("speaker_id"),
+                        speaker_similarity=r.get("speaker_similarity"),
+                        liveness_score=r.get("liveness_score"),
+                        replay_probability=r.get("replay_probability"),
+                        conversation_intent=r.get("conversation_intent"),
+                        conversation_risk=r.get("conversation_risk"),
+                        risk_score=r.get("risk_score", 0),
+                        risk_level=r.get("risk_level", "ALLOW"),
+                        action=r.get("action", "ALLOW"),
+                        confidence=r.get("confidence", 1.0),
+                        signals=r.get("signals") or [],
+                        contributing_signals=r.get("contributing_signals") or [],
+                        explanation=r.get("explanation", ""),
+                        caller_id=r.get("caller_id"),
+                        transcript=r.get("transcript"),
+                        metadata=r.get("metadata") or {},
+                    ))
+                return results
+        except Exception:
+            pass
+        return local_records
+
+    async def get_detection_stats(self) -> Dict[str, Any]:
+        stats = await self.fallback_store.get_detection_stats()
+        stats["backend"] = "supabase"
+        stats["supabase_url"] = self.url
+        stats["table_status"] = "verified" if self._table_available else "fallback_local"
+        return stats
+
+    def get_detection_by_id_sync(self, event_id: int) -> Optional[DetectionEvent]:
+        return self.fallback_store.get_detection_by_id_sync(event_id)
+
+    def delete_detection_sync(self, event_id: int) -> bool:
+        return self.fallback_store.delete_detection_sync(event_id)
+
+    def update_detection_sync(self, event_id: int, updates: Dict[str, Any]) -> bool:
+        return self.fallback_store.update_detection_sync(event_id, updates)
+
+    def clear_detections_sync(self) -> int:
+        return self.fallback_store.clear_detections_sync()
+
+
 # Global Store Singleton
 _detection_store_instance: Optional[DetectionStore] = None
 _detection_store_lock = threading.Lock()
@@ -485,8 +764,16 @@ def get_detection_store() -> DetectionStore:
     global _detection_store_instance
     with _detection_store_lock:
         if _detection_store_instance is None:
-            # Default to SQLite local database, upgradeable to PostgreSQL
-            _detection_store_instance = SQLiteDetectionStore(db_path="vigil_detections.db")
+            backend = getattr(settings, "DETECTION_STORE_BACKEND", "supabase").lower()
+            if backend == "supabase" and getattr(settings, "is_supabase_configured", False):
+                _detection_store_instance = SupabaseDetectionStore(
+                    url=settings.SUPABASE_URL,
+                    key=settings.SUPABASE_KEY
+                )
+            elif backend == "postgres":
+                _detection_store_instance = PostgresDetectionStore()
+            else:
+                _detection_store_instance = SQLiteDetectionStore(db_path="vigil_detections.db")
     return _detection_store_instance
 
 

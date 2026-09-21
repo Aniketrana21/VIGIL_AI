@@ -71,7 +71,14 @@ data class CallMetadata(
     /**
      * Network carrier code or SIM slot ID if available.
      */
-    val carrierCode: String? = null
+    val carrierCode: String? = null,
+
+    /**
+     * VIGIL-AI multi-tenant user UUID, device UUID, and installation UUID.
+     */
+    val userId: String? = null,
+    val deviceId: String? = null,
+    val installationId: String? = null
 ) {
     /**
      * Returns true if the caller presentation is restricted, private, or unknown.
@@ -117,7 +124,8 @@ data class CallMetadata(
         fun fromCallDetails(
             callDetails: Call.Details,
             isKnownContact: Boolean = false,
-            carrierCode: String? = null
+            carrierCode: String? = null,
+            context: android.content.Context? = null
         ): CallMetadata {
             val handleUri = callDetails.handle
             val rawHandle = handleUri?.schemeSpecificPart ?: "UNKNOWN"
@@ -137,6 +145,10 @@ data class CallMetadata(
                 null
             }
 
+            val userId = context?.let { com.vigilai.identity.UserSessionManager.getUserId(it) }
+            val deviceId = context?.let { com.vigilai.identity.UserSessionManager.getDeviceUuid(it) }
+            val installId = context?.let { com.vigilai.identity.UserSessionManager.getInstallationId(it) }
+
             return CallMetadata(
                 rawHandle = rawHandle,
                 phoneNumber = rawHandle,
@@ -148,7 +160,10 @@ data class CallMetadata(
                 callDirection = Call.Details.DIRECTION_INCOMING,
                 contactPhotoUri = contactPhoto,
                 isKnownContact = isKnownContact,
-                carrierCode = carrierCode
+                carrierCode = carrierCode,
+                userId = userId,
+                deviceId = deviceId,
+                installationId = installId
             )
         }
     }

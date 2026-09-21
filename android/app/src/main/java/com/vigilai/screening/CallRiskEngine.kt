@@ -47,7 +47,7 @@ interface CallRiskEngine {
  */
 class DefaultCallRiskEngine(
     private val remoteClient: ScreeningRemoteClient? = null,
-    private val blacklistedNumbers: Set<String> = setOf("+919876543210", "+18005550199"),
+    private val blacklistedNumbers: Set<String> = emptySet(),
     private val trustedContacts: Set<String> = emptySet(),
     private val deadlineTimeoutMs: Long = 3500L,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,

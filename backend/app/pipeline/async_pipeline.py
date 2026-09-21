@@ -207,6 +207,8 @@ class AsyncInferencePipeline:
         self._contextual_signals: List[str] = []
         self._conversational_risk_score: int = 0
         self._last_transcript: str = ""
+        self._rolling_risk_window: Deque[int] = deque(maxlen=5)
+        self._is_terminated: bool = False
 
         # Worker tasks
         self._tasks: List[asyncio.Task] = []
@@ -515,6 +517,82 @@ class AsyncInferencePipeline:
                     explanation=expl_prefix + risk_result.explanation,
                 )
 
+            # Requirement 6: Maintain rolling risk state across overlapping windows
+            self._rolling_risk_window.append(risk_result.risk_score)
+            rolling_avg_risk = sum(self._rolling_risk_window) / len(self._rolling_risk_window)
+
+            # Requirement 10 & 11: Multi-signal confirmation for automatic enforcement
+            # Do NOT block based solely on one model chunk or single anomaly.
+            # Conditions for immediate termination:
+            # 1. High synthetic probability (>= 0.85) with high model confidence (>= 0.75)
+            # 2. Severe speaker mismatch (similarity < 0.35) combined with deepfake suspicion (>= 0.65)
+            # 3. Sustained rolling risk in critical threshold (>= 80)
+            # 4. Critical social engineering credential theft attempt with synthetic voice
+            is_critical_threat = (
+                (df_result.spoof_probability >= 0.85 and df_result.confidence >= 0.75) or
+                (spk_sim is not None and spk_sim < 0.35 and df_result.spoof_probability >= 0.65 and df_result.confidence >= 0.70) or
+                (rolling_avg_risk >= 80.0 and len(self._rolling_risk_window) >= 2 and risk_result.confidence >= 0.70) or
+                ("VOICE_CLONE_SOCIAL_ENGINEERING_SYNERGY" in risk_result.signals and risk_result.confidence >= 0.75)
+            )
+
+            if is_critical_threat:
+                risk_result.recommended_action = "TERMINATE"
+                if not self._is_terminated:
+                    self._is_terminated = True
+                    logger.warning(
+                        f"🛑 CRITICAL THREAT CONFIRMED: Enforcing immediate call termination on session {self.session_id}! "
+                        f"(Score: {risk_result.risk_score}, Deepfake: {df_result.spoof_probability:.2f}, SpeakerSim: {spk_sim})"
+                    )
+                    
+                    term_reason = f"CRITICAL THREAT: {'; '.join(risk_result.contributing_signals[:2]) or 'High-confidence synthetic voice attack detected'}"
+                    
+                    # Push immediate TERMINATE event into telemetry queue for socket consumer
+                    term_event = {
+                        "type": "CALL_TERMINATED",
+                        "event": "call_terminated",
+                        "action": "TERMINATE",
+                        "session_id": self.session_id,
+                        "call_id": self.session_id,
+                        "risk_score": risk_result.risk_score,
+                        "risk_level": "CRITICAL",
+                        "reason": term_reason,
+                        "deepfake_probability": round(df_result.spoof_probability, 3),
+                        "speaker_similarity": spk_sim,
+                        "liveness_score": round(liveness_score, 3),
+                        "timestamp": int(time.time() * 1000),
+                    }
+                    try:
+                        self.telemetry_queue.put_nowait(term_event)
+                    except Exception:
+                        pass
+
+                    # Broadcast to dashboard event bus and update DB asynchronously
+                    try:
+                        from app.services.dashboard_event_bus import dashboard_event_bus
+                        from app.services.call_record_service import CallRecordService
+                        asyncio.create_task(dashboard_event_bus.broadcast_event(
+                            event_type="call_terminated",
+                            payload={
+                                "action": "TERMINATE",
+                                "risk_score": risk_result.risk_score,
+                                "risk_level": "CRITICAL",
+                                "reason": term_reason,
+                                "deepfake_probability": round(df_result.spoof_probability, 3),
+                                "speaker_similarity": spk_sim,
+                                "liveness_score": round(liveness_score, 3),
+                            },
+                            call_id=self.session_id
+                        ))
+                        asyncio.create_task(CallRecordService().update_voip_telemetry(
+                            session_id=self.session_id,
+                            speaker_similarity=spk_sim,
+                            deepfake_probability=df_result.spoof_probability,
+                            liveness_score=liveness_score,
+                            final_action="TERMINATE"
+                        ))
+                    except Exception as b_err:
+                        logger.debug(f"Async broadcast notice: {b_err}")
+
             self._last_risk = risk_result
 
             profile.risk_engine_ms = (time.perf_counter() - t0) * 1000.0
@@ -664,6 +742,9 @@ class AsyncInferencePipeline:
                 "deepfake": deepfake_info,
                 "speaker": speaker_info,
                 "risk": risk_info,
+                "action": risk_info.get("action", "ALLOW"),
+                "is_terminated": self._is_terminated,
+                "rolling_risk_window": list(self._rolling_risk_window),
                 "pipeline": {
                     "latency": profile.to_dict(),
                     "metrics": metrics.to_dict(),
