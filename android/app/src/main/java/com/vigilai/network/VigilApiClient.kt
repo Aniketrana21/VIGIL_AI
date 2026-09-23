@@ -30,8 +30,8 @@ object VigilApiClient : ScreeningRemoteClient {
         .readTimeout(3, TimeUnit.SECONDS)
         .build()
 
-    var backendBaseUrl = "http://10.233.185.235:8000" // User local Wi-Fi IP
-    var apiKey = "vigil-ai-hackathon-demo-key-2026"
+    var backendBaseUrl = com.vigilai.config.VigilConfig.DEFAULT_BASE_URL
+    var apiKey = com.vigilai.config.VigilConfig.DEMO_ONLY_API_KEY
 
     override suspend fun queryRisk(
         phoneNumber: String,

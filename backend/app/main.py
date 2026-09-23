@@ -108,7 +108,7 @@ from fastapi.responses import FileResponse
 
 from app.api import speaker
 
-from app.api.v1.endpoints import auth, calls, challenge, conversation, demo, enroll, health, screening, stream, stream_ingest
+from app.api.v1.endpoints import auth, calls, challenge, conversation, demo, enroll, health, screening, stream, stream_ingest, voice_analysis
 
 # Register API v1 routes
 app.include_router(health.router, prefix="/api/v1/health", tags=["Health"])
@@ -125,18 +125,24 @@ app.include_router(speaker.router)
 app.include_router(stream.router, prefix="/api/v1/stream", tags=["Streaming WebSocket"])
 app.include_router(stream_ingest.router, prefix="/api/v1/stream", tags=["Audio Ingestion"])
 app.include_router(demo.router, prefix="/api/v1/demo", tags=["SIH Demo"])
+app.include_router(voice_analysis.router, prefix="/api/v1/voice_analysis", tags=["Voice Analysis"])
 
 @app.get("/ready", include_in_schema=False)
 async def root_ready():
     return await health.readiness_probe()
 
 
-@app.get("/download/apk", tags=["Android Download"])
+project_root = Path(__file__).resolve().parent.parent.parent
+
+@app.api_route("/download/apk", methods=["GET", "HEAD"], tags=["Android Download"])
 async def download_apk():
     """Directly serves the compiled VIGIL-AI Android APK for easy mobile download over Wi-Fi."""
     candidates = [
+        Path("C:/Users/ranaf/.gradle_builds/vigilai/app/outputs/apk/debug/app-debug.apk"),
+        project_root / "app-debug.apk",
+        project_root / "android" / "app-debug.apk",
         Path("C:/Users/ANIKET/.gradle_builds/vigilai/app/outputs/apk/debug/app-debug.apk"),
-        Path(__file__).resolve().parent.parent.parent / "android" / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk",
+        project_root / "android" / "app" / "build" / "outputs" / "apk" / "debug" / "app-debug.apk",
     ]
     for apk_path in candidates:
         if apk_path.exists():

@@ -19,7 +19,7 @@ _pool: Optional[Any] = None
 _pool_lock = asyncio.Lock()
 
 
-async def get_db_pool() -> Optional[asyncpg.Pool]:
+async def get_db_pool() -> Optional[Any]:
     """
     Returns the singleton asyncpg Connection Pool to Supabase PostgreSQL.
     Configured with fast connection limits and ping health-checks.
@@ -27,6 +27,9 @@ async def get_db_pool() -> Optional[asyncpg.Pool]:
     global _pool
     if _pool is not None:
         return _pool
+
+    if asyncpg is None:
+        return None
 
     async with _pool_lock:
         if _pool is not None:

@@ -16,6 +16,7 @@ netsh advfirewall firewall add rule name="VIGIL_AI_8000" dir=in action=allow pro
 
 echo.
 echo [SUCCESS] Port 8000 is now allowed through Windows Firewall!
-echo Your phone can now reach http://10.233.185.235:8000
+echo Your phone can now reach http://^<YOUR_PC_IP^>:8000
+echo Check your PC IP using: ipconfig
 echo.
 pause

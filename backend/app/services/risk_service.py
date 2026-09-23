@@ -39,7 +39,7 @@ class RiskService:
 
         # Rule 1: Unknown vs Known Caller
         if caller.id is None:
-            score = 45
+            score = 25
             reasons.append("Unenrolled / unknown caller number.")
             if caller.company:
                 score += 15
@@ -123,10 +123,10 @@ class RiskService:
             action = "ALLOW"
         elif final_score <= 54:
             level = "MEDIUM"
-            action = "WARN"
+            action = "MONITOR"
         elif final_score <= 74:
             level = "HIGH"
-            action = "BLOCK"
+            action = "VERIFY"
         else:
             level = "CRITICAL"
             action = "BLOCK"

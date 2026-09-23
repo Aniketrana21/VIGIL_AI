@@ -94,6 +94,23 @@ object LocalBlocklistManager {
     }
 
     /**
+     * Clears all blocked numbers from both memory and persistent storage.
+     * Used for full reset when user requests resetting protection.
+     */
+    fun clearAllBlocked(context: Context?) {
+        runtimeBlocked.clear()
+        if (context != null) {
+            try {
+                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                prefs.edit().remove(KEY_BLOCKED_NUMBERS).apply()
+                Log.i(TAG, "Cleared ALL numbers from local persistent blocklist.")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to clear blocklist: ${e.message}")
+            }
+        }
+    }
+
+    /**
      * Retrieves all active blocked numbers.
      */
     fun getBlockedNumbers(context: Context?): List<String> {
@@ -113,24 +130,13 @@ object LocalBlocklistManager {
         return result.toList()
     }
 
-    private const val KEY_BACKEND_URL = "backend_url"
-    private const val DEFAULT_BACKEND_URL = "http://10.0.2.2:8000"
-
     fun getSavedBackendUrl(context: Context): String {
-        return try {
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            prefs.getString(KEY_BACKEND_URL, DEFAULT_BACKEND_URL) ?: DEFAULT_BACKEND_URL
-        } catch (e: Exception) {
-            DEFAULT_BACKEND_URL
-        }
+        return com.vigilai.config.VigilConfig.getBaseUrl(context)
     }
 
     fun saveBackendUrl(context: Context, url: String) {
-        try {
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            prefs.edit().putString(KEY_BACKEND_URL, url).apply()
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to save backend URL: ${e.message}")
-        }
+        com.vigilai.config.VigilConfig.setBaseUrl(context, url)
+        com.vigilai.network.VigilApiClient.backendBaseUrl = url
+        com.vigilai.network.CallerLookupClient.baseUrl = url
     }
 }

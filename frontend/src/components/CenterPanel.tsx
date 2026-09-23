@@ -123,12 +123,13 @@ export const CenterPanel: React.FC<CenterPanelProps> = ({
         }
         ctx.stroke();
       } else {
-        // Simulated ambient pulse or idle wave
-        dummyPhase += isStreaming ? 0.08 : 0.02;
-        ctx.strokeStyle = isStreaming ? (vadActive ? '#10b981' : '#06b6d4') : '#475569';
+        // Ambient pulse or active wave based on isStreaming or vadActive
+        const active = isStreaming || vadActive;
+        dummyPhase += active ? 0.08 : 0.02;
+        ctx.strokeStyle = active ? (vadActive ? '#10b981' : '#06b6d4') : '#475569';
         ctx.beginPath();
         for (let x = 0; x < width; x++) {
-          const amp = isStreaming ? (vadActive ? 24 : 10) : 3;
+          const amp = active ? (vadActive ? 24 : 10) : 3;
           const y = height / 2 + Math.sin(x * 0.03 + dummyPhase) * amp * Math.cos(x * 0.01);
           if (x === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);

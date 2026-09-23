@@ -25,7 +25,54 @@ class CallerService:
     """Service for resolving caller identity, normalization, and per-user dynamic profile creation."""
 
     # In-memory store for fallback / offline execution (keyed by "user_id:normalized_number")
-    _memory_directory: Dict[str, Dict[str, Any]] = {}
+    _memory_directory: Dict[str, Dict[str, Any]] = {
+        f"{DEFAULT_SYSTEM_USER_ID}:+919876543221": {
+            "id": "22222222-2222-2222-2222-222222222222",
+            "name": "Rahul Sharma",
+            "phone": "+919876543221",
+            "company": "ABC Technologies",
+            "company_verified": False,
+            "company_name_claimed": "ABC Technologies",
+            "company_name_verified": False,
+            "verification_source": "caller_claim",
+            "verification_status": "UNVERIFIED",
+            "relationship": "UNKNOWN",
+            "relationship_verified": False,
+            "trust_status": "neutral",
+            "caller_type": "individual",
+            "is_vip": False,
+        },
+        f"{DEFAULT_SYSTEM_USER_ID}:+919876543210": {
+            "id": "33333333-3333-3333-3333-333333333333",
+            "name": "Flagged Impersonator",
+            "phone": "+919876543210",
+            "company": None,
+            "company_verified": False,
+            "verification_source": "system_blocklist",
+            "verification_status": "UNVERIFIED",
+            "relationship": "UNKNOWN",
+            "relationship_verified": False,
+            "trust_status": "suspicious",
+            "caller_type": "unknown",
+            "is_vip": False,
+        },
+        f"{DEFAULT_SYSTEM_USER_ID}:+14155552671": {
+            "id": "44444444-4444-4444-4444-444444444444",
+            "name": "Sarah Connor",
+            "phone": "+14155552671",
+            "company": "Apex Global Financial",
+            "company_verified": True,
+            "company_name_claimed": "Apex Global Financial",
+            "company_name_verified": True,
+            "verification_source": "pki_registry",
+            "verification_status": "VERIFIED",
+            "relationship": "UNKNOWN",
+            "relationship_verified": False,
+            "trust_status": "neutral",
+            "caller_type": "business",
+            "is_vip": False,
+        },
+    }
 
     @staticmethod
     def normalize_phone_number(raw_number: str, default_country_code: str = "+91") -> str:
@@ -211,10 +258,9 @@ class CallerService:
                 mem = self._memory_directory[mem_key]
                 caller_details = CallerDetails(**mem)
             else:
-                caller_id = str(uuid.uuid4())
                 auto_name = display_name_hint or f"Unknown Caller ({normalized})"
                 new_record = {
-                    "id": caller_id,
+                    "id": None,
                     "name": auto_name,
                     "phone": normalized,
                     "company": claimed_company,

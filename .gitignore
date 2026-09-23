@@ -26,13 +26,23 @@ htmlcov/
 
 # Android & Gradle
 android/.gradle/
+.gradle/
+**/build/
 android/build/
+android/app/build/
 android/local.properties
 android/.idea/
 android/*.iml
 android/captures/
 android/.externalNativeBuild/
 android/.cxx/
+
+# AI Models & Checkpoints
+backend/models/
+models/
+*.ckpt
+*.onnx
+*.safetensors
 
 # Node & Frontend
 node_modules/

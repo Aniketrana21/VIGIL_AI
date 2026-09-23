@@ -285,9 +285,11 @@ async def get_live_screening_feed(user_id: Optional[str] = Query(None)):
                                 "risk_level": r["overall_risk_level"],
                                 "action": r["final_action"],
                                 "reasons": [r["action_reason"]] if r["action_reason"] else ["Screened incoming call"],
-                                "voice_deepfake_pct": 92 if r["final_action"] == "BLOCK" else 8,
-                                "voice_identity_pct": 88 if r["final_action"] == "BLOCK" else 94,
-                                "voice_liveness_pct": 40 if r["final_action"] == "BLOCK" else 95,
+                                "inference_source": "TELECOM_METADATA",
+                                "voice_analysis_status": "AUDIO_UNAVAILABLE",
+                                "voice_deepfake_pct": None,
+                                "voice_identity_pct": None,
+                                "voice_liveness_pct": None,
                                 "warning_banner": "⚠ Known fraudulent caller blocked by security policy." if r["final_action"] == "BLOCK" else None,
                                 "calls_summary_total": 1,
                                 "calls_summary_today": 1,
@@ -340,6 +342,8 @@ async def trigger_live_fraud_call(payload: Dict[str, Any] = None):
             "Urgent coercion & coercive impersonation language detected in threat intel.",
             "Subscriber protected: Call disallowed and rejected prior to ringing."
         ],
+        "inference_source": "SYNTHETIC_TEST",
+        "voice_analysis_status": "SYNTHETIC_TEST",
         "voice_deepfake_pct": 96,
         "voice_identity_pct": 91,
         "voice_liveness_pct": 32,
@@ -384,6 +388,7 @@ async def trigger_live_fraud_call(payload: Dict[str, Any] = None):
         "call_transport": "CELLULAR",
         "timestamp": now_iso,
         "threat_signals": fraud_call["reasons"],
+        "inference_source": "SYNTHETIC_TEST",
         "user_id": req_user_id,
     }
     dashboard_event_bus.set_active_call(call_id, fraud_payload)

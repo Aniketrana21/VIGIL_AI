@@ -149,8 +149,15 @@ export function useVigilWebSocket() {
                 risk_score: data.risk_score !== undefined ? data.risk_score : prev.risk_score,
                 risk_level: (data.risk_level as any) || prev.risk_level,
                 action: (data.action as any) || prev.action,
-                vad_active: data.voice_activity === 'YES',
-                live_transcript: data.transcript_segment || prev.live_transcript,
+                vad_active: data.voice_activity === 'YES' || (data.waveform_sample && data.waveform_sample.some((v: number) => Math.abs(v) > 0.04)),
+                live_transcript: data.live_transcript || data.transcript_segment || prev.live_transcript,
+                waveform_sample: (data.waveform_sample && data.waveform_sample.length > 0) ? data.waveform_sample : prev.waveform_sample,
+                conversation: (data.conversation || data.live_transcript || data.transcript_segment) ? {
+                  intent: data.conversation?.intent || data.conversation_intent || prev.conversation?.intent || 'NOMINAL',
+                  risk_signal: data.conversation?.risk_signal ?? prev.conversation?.risk_signal ?? 0.1,
+                  evidence: data.conversation?.evidence || prev.conversation?.evidence || '',
+                  transcript: data.live_transcript || data.transcript_segment || data.conversation?.transcript || prev.conversation?.transcript || '',
+                } : prev.conversation,
                 active_call: prev.active_call ? {
                   ...prev.active_call,
                   speaker_verification_status: speakerScore >= 85 ? 'VERIFIED' : (speakerScore < 40 ? 'MISMATCH' : 'ANALYZING'),

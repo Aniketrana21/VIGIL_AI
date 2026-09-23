@@ -12,10 +12,13 @@ Generates:
 
 import os
 from pathlib import Path
-from typing import Dict, List, Tuple
-import matplotlib
-matplotlib.use("Agg")  # Non-interactive headless backend
-import matplotlib.pyplot as plt
+try:
+    import matplotlib
+    matplotlib.use("Agg")  # Non-interactive headless backend
+    import matplotlib.pyplot as plt
+except ImportError:
+    matplotlib = None
+    plt = None
 import numpy as np
 import scipy.stats
 import sklearn.metrics

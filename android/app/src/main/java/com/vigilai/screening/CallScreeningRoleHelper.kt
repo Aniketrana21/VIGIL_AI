@@ -51,14 +51,53 @@ object CallScreeningRoleHelper {
     }
 
     /**
+     * Checks if ROLE_DIALER is available on this device.
+     */
+    fun isDialerRoleAvailable(context: Context): Boolean {
+        if (!isCallScreeningRoleSupported()) return false
+        val roleManager = context.getSystemService(Context.ROLE_SERVICE) as? RoleManager ?: return false
+        return roleManager.isRoleAvailable(RoleManager.ROLE_DIALER)
+    }
+
+    /**
+     * Returns true if VIGIL-AI is currently the default Phone / Dialer app.
+     */
+    fun isDialerRoleHeld(context: Context): Boolean {
+        if (!isCallScreeningRoleSupported()) {
+            val telecom = context.getSystemService(Context.TELECOM_SERVICE) as? android.telecom.TelecomManager
+            return telecom?.defaultDialerPackage == context.packageName
+        }
+        val roleManager = context.getSystemService(Context.ROLE_SERVICE) as? RoleManager ?: return false
+        return roleManager.isRoleHeld(RoleManager.ROLE_DIALER)
+    }
+
+    /**
+     * Generates system Intent to request setting VIGIL-AI as the Default Phone App.
+     */
+    fun createRequestDialerRoleIntent(context: Context): Intent? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = context.getSystemService(Context.ROLE_SERVICE) as? RoleManager
+            if (roleManager?.isRoleAvailable(RoleManager.ROLE_DIALER) == true) {
+                return roleManager.createRequestRoleIntent(RoleManager.ROLE_DIALER)
+            }
+        }
+        return Intent(android.telecom.TelecomManager.ACTION_CHANGE_DEFAULT_DIALER).apply {
+            putExtra(android.telecom.TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, context.packageName)
+        }
+    }
+
+    /**
      * Provides a human-readable summary of the current role status.
      */
     fun getRoleStatusDescription(context: Context): String {
+        val dialer = isDialerRoleHeld(context)
+        val screening = isRoleHeld(context)
+
         return when {
-            !isCallScreeningRoleSupported() -> "Requires Android 10 (API 29) or higher"
-            !isRoleAvailable(context) -> "Call screening role not supported on this device"
-            isRoleHeld(context) -> "ACTIVE (VIGIL-AI is default screening service)"
-            else -> "NOT GRANTED (Click to enable Mode B screening)"
+            dialer && screening -> "ACTIVE: Default Phone App & Call Screener"
+            dialer -> "ACTIVE: Default Phone App (Call screening active)"
+            screening -> "ACTIVE: Call Screener Armed"
+            else -> "TAP TO SET AS DEFAULT PHONE APP"
         }
     }
 }

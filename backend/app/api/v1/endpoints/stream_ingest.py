@@ -130,6 +130,9 @@ async def websocket_audio_ingest(
                                 "action": risk_info.get("action", risk_info.get("recommended_action", "ALLOW")),
                                 "voice_activity": "YES" if d.get("vad", {}).get("is_speech") else "NO",
                                 "threat_signals": risk_info.get("signals", []),
+                                "waveform_sample": d.get("waveform_sample", []),
+                                "live_transcript": d.get("transcript", ""),
+                                "transcript_segment": d.get("transcript", ""),
                             },
                             call_id=clean_session_id,
                             user_id=stream_user_id

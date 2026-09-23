@@ -443,6 +443,110 @@ class ECAPATDNNEncoder(SpeakerEncoder):
         return np.array(final_embeddings, dtype=np.float32)
 
 
+class SpeechBrainECAPATDNNEncoder(SpeakerEncoder):
+    """
+    Genuine SpeechBrain ECAPA-TDNN pretrained on VoxCeleb1+2 (192-dim embeddings).
+    Extracts L2-normalized identity embeddings from raw 16kHz audio.
+    """
+    MODEL_NAME = "SpeechBrain ECAPA-TDNN"
+    MODEL_VERSION = "SpeechBrain-ECAPA-TDNN-VoxCeleb-v1.0"
+
+    def __init__(self, model_dir: Optional[str] = None, device: Optional[str] = None):
+        from pathlib import Path
+        if device is None or str(device).lower() in ("auto", "none"):
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        elif str(device).lower().startswith("cuda"):
+            self.device = str(device).lower() if torch.cuda.is_available() else "cpu"
+        elif str(device).lower() == "mps":
+            self.device = "mps" if (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()) else "cpu"
+        else:
+            self.device = "cpu"
+
+        self.embedding_dim = 192
+        self.sample_rate = 16000
+
+        # Locate local weights directory
+        local_dir = model_dir or getattr(settings, "SPEAKER_MODEL_DIR", None)
+        if not local_dir or not os.path.exists(local_dir):
+            base_backend = Path(__file__).resolve().parent.parent.parent
+            cand1 = base_backend / "models" / "ecapa_voxceleb"
+            cand2 = Path("models/ecapa_voxceleb")
+            if cand1.exists():
+                local_dir = str(cand1)
+            elif cand2.exists():
+                local_dir = str(cand2)
+            else:
+                local_dir = "speechbrain/spkrec-ecapa-voxceleb"
+
+        logger.info(f"Initializing SpeechBrain ECAPA-TDNN from '{local_dir}' on device '{self.device}'...")
+        from speechbrain.inference.speaker import EncoderClassifier
+        self.classifier = EncoderClassifier.from_hparams(
+            source=local_dir,
+            savedir=local_dir,
+            run_opts={"device": self.device}
+        )
+        self.classifier.eval()
+        self.model_dir = str(local_dir)
+        logger.info("SpeechBrain ECAPA-TDNN initialized successfully.")
+
+    def get_model_info(self) -> Dict[str, Any]:
+        return {
+            "name": self.MODEL_NAME,
+            "version": self.MODEL_VERSION,
+            "status": "READY",
+            "device": self.device,
+            "embedding_dim": self.embedding_dim,
+            "inference_source": "MODEL_INFERENCE",
+            "model_path": self.model_dir,
+            "sample_rate": self.sample_rate,
+        }
+
+    def warmup(self, device: str = "cpu") -> float:
+        t0 = time.perf_counter()
+        dummy = torch.zeros(1, 16000, dtype=torch.float32, device=self.device)
+        with torch.no_grad():
+            _ = self.classifier.encode_batch(dummy)
+        warmup_ms = (time.perf_counter() - t0) * 1000.0
+        logger.info(f"SpeechBrain ECAPA-TDNN warmed up in {warmup_ms:.2f}ms on {self.device}.")
+        return warmup_ms
+
+    def encode(self, audio: Union[np.ndarray, torch.Tensor], sample_rate: int = 16000) -> np.ndarray:
+        results = self.encode_batch([audio], sample_rate=sample_rate)
+        return results[0]
+
+    def encode_batch(self, audios: List[Union[np.ndarray, torch.Tensor]], sample_rate: int = 16000) -> np.ndarray:
+        if len(audios) == 0:
+            return np.empty((0, self.embedding_dim), dtype=np.float32)
+
+        processed = []
+        for a in audios:
+            if isinstance(a, torch.Tensor):
+                a_np = a.detach().cpu().squeeze().numpy().astype(np.float32)
+            else:
+                a_np = np.asarray(a, dtype=np.float32).flatten()
+
+            if sample_rate != 16000 and len(a_np) > 0:
+                num_target_samples = int(len(a_np) * 16000 / sample_rate)
+                a_np = scipy.signal.resample(a_np, num_target_samples).astype(np.float32)
+
+            min_samples = 6400  # 0.4 seconds
+            if len(a_np) < min_samples:
+                pad_len = min_samples - len(a_np)
+                a_np = np.pad(a_np, (0, pad_len), mode="constant")
+
+            processed.append(torch.from_numpy(a_np).to(torch.float32))
+
+        max_len = max(p.shape[0] for p in processed)
+        batch_tensors = [F.pad(p, (0, max_len - p.shape[0])) if p.shape[0] < max_len else p for p in processed]
+        batch_stacked = torch.stack(batch_tensors, dim=0).to(self.device)
+
+        with torch.no_grad():
+            emb = self.classifier.encode_batch(batch_stacked).squeeze(1)
+            norm = torch.norm(emb, p=2, dim=-1, keepdim=True) + 1e-12
+            emb_norm = emb / norm
+            return emb_norm.cpu().numpy().astype(np.float32)
+
+
 class SpeakerModelRegistry:
     """
     Thread-safe singleton registry for the SpeakerEncoder.
@@ -456,14 +560,24 @@ class SpeakerModelRegistry:
         if cls._encoder is None:
             with cls._instance_lock:
                 if cls._encoder is None:
-                    encoder = ECAPATDNNEncoder(
-                        checkpoint_path=getattr(settings, "SPEAKER_ENCODER_CHECKPOINT", None),
-                        device=getattr(settings, "INFERENCE_DEVICE", "cpu"),
-                        embedding_dim=getattr(settings, "SPEAKER_EMBEDDING_DIM", 192),
-                        min_duration_sec=getattr(settings, "SPEAKER_MIN_UTTERANCE_DURATION_SEC", 0.4),
-                    )
-                    encoder.warmup(device=encoder.device)
-                    cls._encoder = encoder
+                    # Attempt loading official SpeechBrain ECAPA-TDNN first
+                    try:
+                        encoder = SpeechBrainECAPATDNNEncoder(
+                            device=getattr(settings, "INFERENCE_DEVICE", "cpu")
+                        )
+                        encoder.warmup(device=encoder.device)
+                        cls._encoder = encoder
+                        logger.info("SpeechBrain ECAPA-TDNN registered as primary speaker encoder.")
+                    except Exception as e:
+                        logger.warning(f"SpeechBrain ECAPA-TDNN unavailable ({e}). Using native ECAPATDNNEncoder.")
+                        encoder = ECAPATDNNEncoder(
+                            checkpoint_path=getattr(settings, "SPEAKER_ENCODER_CHECKPOINT", None),
+                            device=getattr(settings, "INFERENCE_DEVICE", "cpu"),
+                            embedding_dim=getattr(settings, "SPEAKER_EMBEDDING_DIM", 192),
+                            min_duration_sec=getattr(settings, "SPEAKER_MIN_UTTERANCE_DURATION_SEC", 0.4),
+                        )
+                        encoder.warmup(device=encoder.device)
+                        cls._encoder = encoder
         return cls._encoder
 
     @classmethod

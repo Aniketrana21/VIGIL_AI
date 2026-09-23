@@ -4,6 +4,7 @@ plugins {
 }
 
 allprojects {
-    layout.buildDirectory.set(file("C:/Users/ANIKET/.gradle_builds/vigilai/${project.name}"))
+    layout.buildDirectory.set(file("C:/Users/ranaf/.gradle_builds/vigilai/${project.name}"))
 }
+
 

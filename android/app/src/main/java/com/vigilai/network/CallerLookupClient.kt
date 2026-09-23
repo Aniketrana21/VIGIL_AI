@@ -110,8 +110,8 @@ object CallerLookupClient {
         .writeTimeout(CLIENT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .build()
 
-    var baseUrl: String = "http://10.233.185.235:8000" // User local Wi-Fi IP
-    var apiKey: String = "dev-vigil-secret-key-change-in-prod"
+    var baseUrl: String = com.vigilai.config.VigilConfig.DEFAULT_BASE_URL
+    var apiKey: String = com.vigilai.config.VigilConfig.DEMO_ONLY_API_KEY
 
     /**
      * Performs fast pre-call metadata lookup and preliminary risk evaluation.

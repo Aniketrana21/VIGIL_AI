@@ -207,12 +207,51 @@ class AsyncInferencePipeline:
         self._contextual_signals: List[str] = []
         self._conversational_risk_score: int = 0
         self._last_transcript: str = ""
+        self._last_waveform_sample: List[float] = []
         self._rolling_risk_window: Deque[int] = deque(maxlen=5)
         self._is_terminated: bool = False
+        self._is_transcribing: bool = False
 
         # Worker tasks
         self._tasks: List[asyncio.Task] = []
         self._running = False
+
+    async def _transcribe_audio_async(self, window: np.ndarray) -> None:
+        """Asynchronously runs Whisper ASR and linguistic intent evaluation on speech window."""
+        if self._is_transcribing or not self._running:
+            return
+        self._is_transcribing = True
+        try:
+            from app.pipeline.conversation_intelligence import get_conversation_classifier
+            ci = get_conversation_classifier()
+            ci_res = await asyncio.to_thread(ci.transcribe_and_evaluate, window, user_consent=True, store_transcript_consented=True)
+            if ci_res and ci_res.transcript and ci_res.transcript.strip():
+                text = ci_res.transcript.strip()
+                intent_val = ci_res.intent if isinstance(ci_res.intent, str) else getattr(ci_res.intent, "value", str(ci_res.intent))
+                conv_risk = int(round(ci_res.risk_signal * 100))
+                self.add_contextual_signal(intent_val, transcript=text, conv_risk=conv_risk)
+                
+                # Broadcast real-time speech transcription to active dashboard
+                from app.services.dashboard_event_bus import dashboard_event_bus
+                await dashboard_event_bus.broadcast_event(
+                    event_type="analysis_update",
+                    payload={
+                        "live_transcript": text,
+                        "transcript_segment": text,
+                        "conversation_intent": intent_val,
+                        "conversation": {
+                            "intent": intent_val,
+                            "risk_signal": ci_res.risk_signal,
+                            "evidence": ci_res.evidence,
+                            "transcript": text,
+                        }
+                    },
+                    call_id=self.session_id
+                )
+        except Exception as e:
+            logger.debug(f"Async transcription notice: {e}")
+        finally:
+            self._is_transcribing = False
 
     def add_contextual_signal(self, signal: str, transcript: Optional[str] = None, conv_risk: int = 0) -> None:
         """Injects linguistic scam/fraud intent from spoken speech into the streaming risk engine."""
@@ -422,6 +461,17 @@ class AsyncInferencePipeline:
             profile.liveness_ms = (time.perf_counter() - t3) * 1000.0
 
             profile.total_inference_ms = profile.vad_ms + profile.deepfake_ms + profile.speaker_ms + profile.liveness_ms
+
+            # Waveform downsampling for live oscilloscope rendering (64 points)
+            try:
+                step = max(1, len(window) // 64)
+                self._last_waveform_sample = [round(float(s), 3) for s in window[::step][:64].tolist()]
+            except Exception:
+                pass
+
+            # Asynchronous speech transcription if speech is detected
+            if vad_decision.is_speech and not self._is_transcribing:
+                asyncio.create_task(self._transcribe_audio_async(window))
 
             with self._lock:
                 self._total_inferred += 1
@@ -752,6 +802,8 @@ class AsyncInferencePipeline:
                     "smoothing_alpha": self.smoother.alpha,
                 },
                 "error": None,
+                "waveform_sample": list(self._last_waveform_sample),
+                "transcript": self._last_transcript,
                 "timestamp": int(time.time() * 1000),
             },
         }

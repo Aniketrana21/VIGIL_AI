@@ -35,7 +35,7 @@ class AudioStreamVoipService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val serverWsUrl = intent?.getStringExtra("EXTRA_WS_URL") ?: "ws://10.233.185.235:8000/api/v1/stream/ingest"
+        val serverWsUrl = intent?.getStringExtra("EXTRA_WS_URL") ?: com.vigilai.config.VigilConfig.getWsUrl(this)
         startStreaming(serverWsUrl)
         return START_STICKY
     }

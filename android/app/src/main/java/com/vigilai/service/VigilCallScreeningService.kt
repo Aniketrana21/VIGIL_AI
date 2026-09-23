@@ -35,16 +35,18 @@ class VigilCallScreeningService : CallScreeningService() {
 
     override fun onScreenCall(callDetails: Call.Details) {
         val startTime = System.currentTimeMillis()
+        Log.i(tag, "CALL_SCREENING_STARTED: onScreenCall callback triggered by Android Telecom framework.")
 
         // 1. Extract dynamic Telecom metadata and multi-user device identity
         val metadata = CallMetadata.fromCallDetails(callDetails, context = applicationContext)
         val maskedCaller = metadata.toMaskedNumber()
 
-        Log.i(tag, "Incoming call received: $maskedCaller (Raw: ${metadata.phoneNumber}, user: ${metadata.userId}, STIR/SHAKEN: ${metadata.callerNumberVerificationStatus})")
+        Log.i(tag, "CALL_SCREENING_RECEIVED: Call details received for caller: $maskedCaller (Raw: ${metadata.phoneNumber}, user: ${metadata.userId}, STIR/SHAKEN: ${metadata.callerNumberVerificationStatus})")
+        Log.i(tag, "CALL_NUMBER_AVAILABLE: Phone number available: ${metadata.phoneNumber.isNotBlank()} (Number length: ${metadata.phoneNumber.length})")
 
         // 2. IMMEDIATE LOCAL BLOCKLIST CHECK: Zero-lag instant drop for known scam numbers
         if (LocalBlocklistManager.isBlocked(applicationContext, metadata.phoneNumber)) {
-            Log.w(tag, "🚨 LOCAL BLOCKLIST HIT for $maskedCaller: Immediately dropping and rejecting call via Telecom!")
+            Log.w(tag, "CALL_SCREENING_DECISION: LOCAL BLOCKLIST HIT for $maskedCaller: Immediately dropping and rejecting call via Telecom!")
             val immediateBlockResponse = CallResponse.Builder()
                 .setDisallowCall(true)
                 .setRejectCall(true)
@@ -53,6 +55,8 @@ class VigilCallScreeningService : CallScreeningService() {
                 .build()
 
             respondToCall(callDetails, immediateBlockResponse)
+            val elapsed = System.currentTimeMillis() - startTime
+            Log.i(tag, "CALL_SCREENING_COMPLETED: Instant rejection completed in ${elapsed}ms.")
 
             CallAlertOverlayService.showWarningAlert(
                 context = applicationContext,
@@ -111,12 +115,13 @@ class VigilCallScreeningService : CallScreeningService() {
 
                 // 4. Build Telecom CallResponse according to configured security policy
                 val callResponse = ScreeningDecisionManager.buildTelecomResponse(lookupResult)
+                Log.i(tag, "CALL_SCREENING_DECISION: Recommendation=${lookupResult.recommendedAction}, RiskScore=${lookupResult.risk.score}")
 
                 // 5. Respond to Android Telecom framework immediately
                 respondToCall(callDetails, callResponse)
 
                 val elapsed = System.currentTimeMillis() - startTime
-                Log.i(tag, "Responded to Telecom in ${elapsed}ms: Action=${lookupResult.recommendedAction} Risk=${lookupResult.risk.score}")
+                Log.i(tag, "CALL_SCREENING_COMPLETED: Responded to Telecom in ${elapsed}ms: Action=${lookupResult.recommendedAction} Risk=${lookupResult.risk.score}")
 
                 // 6. Output formatted VIGIL-AI Incoming Call Screen & Caller Security Profile
                 val incomingScreen = ScreeningDecisionManager.formatIncomingCallScreen(lookupResult)
@@ -147,13 +152,13 @@ class VigilCallScreeningService : CallScreeningService() {
 
             } catch (e: Exception) {
                 Log.e(tag, "Unexpected error screening call $maskedCaller: ${e.message}")
-                // Check if number was blocked locally before falling back to ALLOW
                 val fallbackAction = if (LocalBlocklistManager.isBlocked(applicationContext, metadata.phoneNumber)) {
                     CallResponse.Builder().setDisallowCall(true).setRejectCall(true).build()
                 } else {
                     CallResponse.Builder().setDisallowCall(false).setRejectCall(false).setSilenceCall(false).build()
                 }
                 respondToCall(callDetails, fallbackAction)
+                Log.i(tag, "CALL_SCREENING_COMPLETED: Fallback response dispatched due to error.")
             }
         }
     }

@@ -324,9 +324,9 @@ class TestPhase5SpeakerVerification:
             speech = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
 
         # Enroll Alice using reference speech slices
-        u1 = speech[:16000]
-        u2 = speech[8000:24000]
-        u3 = speech[16000:32000]
+        u1 = speech
+        u2 = speech
+        u3 = speech
         await self.enroll_svc.enroll_speaker("alice", "Alice Smith", [u1, u2, u3])
 
         session = StreamingSessionManager(
